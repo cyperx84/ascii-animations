@@ -1,0 +1,25 @@
+# Binaries
+ascii-animations
+showcase
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+/bin/
+exported/
+
+# Vendor (if used)
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
