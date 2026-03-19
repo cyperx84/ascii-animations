@@ -1,4 +1,4 @@
-// Package effects provides full-screen terminal effects (matrix rain, fire, rain).
+// Package effects provides full-screen terminal effects.
 package effects
 
 import (
@@ -257,26 +257,342 @@ func RenderStarfield(w, h, frame int) string {
 	return sb.String()
 }
 
-// SourceMatrix is example source code for matrix rain.
-const SourceMatrix = `// Matrix rain with Bubble Tea
+// RenderSnow produces a frame of falling snow with accumulation.
+func RenderSnow(w, h, frame int) string {
+	if w < 2 || h < 2 {
+		return ""
+	}
+	src := rand.New(rand.NewSource(55))
+	flakes := []rune{'*', '·', '•', '∘', '○', '❄', '❅'}
+
+	type snowflake struct {
+		x, startY, speed int
+		ch               rune
+	}
+	numFlakes := w * h / 10
+	if numFlakes < 20 {
+		numFlakes = 20
+	}
+	sf := make([]snowflake, numFlakes)
+	for i := range sf {
+		sf[i] = snowflake{
+			x:      src.Intn(w),
+			startY: src.Intn(h * 3),
+			speed:  1 + src.Intn(2),
+			ch:     flakes[src.Intn(len(flakes))],
+		}
+	}
+
+	buf := make([][]rune, h)
+	for y := range buf {
+		buf[y] = make([]rune, w)
+		for x := range buf[y] {
+			buf[y][x] = ' '
+		}
+	}
+
+	// accumulation at bottom
+	for x := 0; x < w; x++ {
+		depth := (src.Intn(3) + frame/30) % 4
+		for d := 0; d < depth && h-1-d >= 0; d++ {
+			buf[h-1-d][x] = '▓'
+		}
+	}
+
+	for _, f := range sf {
+		// wind drift
+		drift := int(math.Sin(float64(frame)/10+float64(f.x)) * 2)
+		y := (f.startY + frame*f.speed) % (h + 8)
+		x := (f.x + drift) % w
+		if x < 0 {
+			x += w
+		}
+		if y >= 0 && y < h-2 && buf[y][x] == ' ' {
+			buf[y][x] = f.ch
+		}
+	}
+
+	var sb strings.Builder
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			ch := buf[y][x]
+			if ch == '▓' {
+				sb.WriteString("\033[97m")
+				sb.WriteRune(ch)
+				sb.WriteString("\033[0m")
+			} else if ch != ' ' {
+				sb.WriteString("\033[37m")
+				sb.WriteRune(ch)
+				sb.WriteString("\033[0m")
+			} else {
+				sb.WriteRune(' ')
+			}
+		}
+		if y < h-1 {
+			sb.WriteByte('\n')
+		}
+	}
+	return sb.String()
+}
+
+// RenderDNA produces a frame of a rotating DNA double helix.
+func RenderDNA(w, h, frame int) string {
+	if w < 10 || h < 4 {
+		return ""
+	}
+	cx := float64(w) / 2
+	amplitude := float64(w) / 5
+	if amplitude > 15 {
+		amplitude = 15
+	}
+	pairs := []rune{'A', 'T', 'G', 'C'}
+
+	var sb strings.Builder
+	for y := 0; y < h; y++ {
+		line := make([]rune, w)
+		for x := range line {
+			line[x] = ' '
+		}
+
+		phase := float64(y)*0.6 + float64(frame)*0.15
+		x1 := int(cx + amplitude*math.Sin(phase))
+		x2 := int(cx - amplitude*math.Sin(phase))
+
+		if x1 < 0 {
+			x1 = 0
+		}
+		if x1 >= w {
+			x1 = w - 1
+		}
+		if x2 < 0 {
+			x2 = 0
+		}
+		if x2 >= w {
+			x2 = w - 1
+		}
+
+		// draw connecting bars at certain intervals
+		if y%3 == 0 {
+			lo, hi := x1, x2
+			if lo > hi {
+				lo, hi = hi, lo
+			}
+			for x := lo; x <= hi; x++ {
+				line[x] = '─'
+			}
+			pi := (y + frame) % len(pairs)
+			mid := (lo + hi) / 2
+			if mid >= 0 && mid < w {
+				line[mid] = pairs[pi]
+			}
+		}
+
+		// draw strand positions
+		if x1 >= 0 && x1 < w {
+			line[x1] = '●'
+		}
+		if x2 >= 0 && x2 < w {
+			line[x2] = '●'
+		}
+
+		for x := 0; x < w; x++ {
+			ch := line[x]
+			switch ch {
+			case '●':
+				sb.WriteString("\033[96m") // cyan
+				sb.WriteRune(ch)
+				sb.WriteString("\033[0m")
+			case '─':
+				sb.WriteString("\033[90m") // dim
+				sb.WriteRune(ch)
+				sb.WriteString("\033[0m")
+			case 'A', 'T':
+				sb.WriteString("\033[91m") // red
+				sb.WriteRune(ch)
+				sb.WriteString("\033[0m")
+			case 'G', 'C':
+				sb.WriteString("\033[93m") // yellow
+				sb.WriteRune(ch)
+				sb.WriteString("\033[0m")
+			default:
+				sb.WriteRune(' ')
+			}
+		}
+		if y < h-1 {
+			sb.WriteByte('\n')
+		}
+	}
+	return sb.String()
+}
+
+// RenderWave produces a frame of sine wave animation.
+func RenderWave(w, h, frame int) string {
+	if w < 4 || h < 4 {
+		return ""
+	}
+	screen := make([][]rune, h)
+	for y := range screen {
+		screen[y] = make([]rune, w)
+		for x := range screen[y] {
+			screen[y][x] = ' '
+		}
+	}
+
+	colors := []string{"\033[91m", "\033[93m", "\033[92m", "\033[96m", "\033[94m", "\033[95m"}
+	numWaves := 6
+	if numWaves > h/2 {
+		numWaves = h / 2
+	}
+	if numWaves < 1 {
+		numWaves = 1
+	}
+
+	for wi := 0; wi < numWaves; wi++ {
+		baseY := float64(h) / float64(numWaves+1) * float64(wi+1)
+		amp := float64(h) / float64(numWaves+1) * 0.3
+		freq := 0.1 + float64(wi)*0.02
+		phaseOff := float64(wi) * 0.8
+
+		for x := 0; x < w; x++ {
+			yf := baseY + amp*math.Sin(float64(x)*freq+float64(frame)*0.12+phaseOff)
+			y := int(yf)
+			if y >= 0 && y < h {
+				ch := '~'
+				if (x+frame+wi)%4 == 0 {
+					ch = '≈'
+				}
+				screen[y][x] = ch
+			}
+		}
+	}
+
+	var sb strings.Builder
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			ch := screen[y][x]
+			if ch != ' ' {
+				// determine which wave this belongs to
+				closestWave := 0
+				minDist := float64(h)
+				for wi := 0; wi < numWaves; wi++ {
+					baseY := float64(h) / float64(numWaves+1) * float64(wi+1)
+					d := math.Abs(float64(y) - baseY)
+					if d < minDist {
+						minDist = d
+						closestWave = wi
+					}
+				}
+				ci := closestWave % len(colors)
+				sb.WriteString(colors[ci])
+				sb.WriteRune(ch)
+				sb.WriteString("\033[0m")
+			} else {
+				sb.WriteRune(' ')
+			}
+		}
+		if y < h-1 {
+			sb.WriteByte('\n')
+		}
+	}
+	return sb.String()
+}
+
+// RenderPlasma produces a frame of a colorful plasma effect.
+func RenderPlasma(w, h, frame int) string {
+	if w < 4 || h < 4 {
+		return ""
+	}
+	chars := []rune{' ', '░', '▒', '▓', '█', '▓', '▒', '░'}
+	t := float64(frame) * 0.08
+
+	var sb strings.Builder
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			fx := float64(x) / float64(w) * 4
+			fy := float64(y) / float64(h) * 4
+
+			v := math.Sin(fx + t)
+			v += math.Sin(fy + t*0.7)
+			v += math.Sin((fx+fy+t) * 0.5)
+			v += math.Sin(math.Sqrt(fx*fx+fy*fy+1) + t*0.8)
+			v = (v + 4) / 8 // normalize to 0..1
+
+			ci := int(v * float64(len(chars)))
+			if ci >= len(chars) {
+				ci = len(chars) - 1
+			}
+			if ci < 0 {
+				ci = 0
+			}
+
+			// color based on a second function
+			hue := math.Mod(v*360+float64(frame)*3, 360)
+			var color string
+			switch {
+			case hue < 60:
+				color = "\033[91m" // red
+			case hue < 120:
+				color = "\033[93m" // yellow
+			case hue < 180:
+				color = "\033[92m" // green
+			case hue < 240:
+				color = "\033[96m" // cyan
+			case hue < 300:
+				color = "\033[94m" // blue
+			default:
+				color = "\033[95m" // magenta
+			}
+
+			sb.WriteString(color)
+			sb.WriteRune(chars[ci])
+			sb.WriteString("\033[0m")
+		}
+		if y < h-1 {
+			sb.WriteByte('\n')
+		}
+	}
+	return sb.String()
+}
+
+// Source snippets for effects.
+const (
+	SourceMatrix = `// Matrix rain with Bubble Tea
 // Each column tracks a falling head position and speed.
 // Render bright head char + dimming trail behind it.
 // Use lipgloss.NewStyle().Foreground(lipgloss.Color("#50fa7b"))`
 
-// SourceFire is example source code for fire effect.
-const SourceFire = `// Fire simulation
+	SourceFire = `// Fire simulation
 // Bottom row = max heat, propagate upward with random cooling.
 // Map heat (0-9) to chars: " .:-=+*#%@"
 // Color with ANSI: high heat = yellow/white, low = red/dark`
 
-// SourceRain is example source code for rain effect.
-const SourceRain = `// Rain effect with Bubble Tea
+	SourceRain = `// Rain effect with Bubble Tea
 // Spawn droplets at random x positions, fall downward.
 // Use │ for drops, . for trail, ╨ for splash.
 // Color with ANSI blue: \033[94m`
 
-// SourceStarfield is example source code for starfield.
-const SourceStarfield = `// Starfield: stars move outward from center
+	SourceStarfield = `// Starfield: stars move outward from center
 // Each star has (x,y) in [-1,1] and a speed.
 // Project to screen coords, scale by distance from center.
 // Brightness: closer to edge = brighter (farther traveled).`
+
+	SourceSnow = `// Snow: falling flakes with wind drift and accumulation
+// Use sin() for horizontal drift, random speed per flake.
+// Accumulate ▓ blocks at bottom over time.
+// White ANSI color: \033[37m`
+
+	SourceDNA = `// DNA double helix: two strands oscillate in opposition
+// sin(y + frame) gives x offset for each strand.
+// Draw connecting bars with base pairs (A-T, G-C).
+// Color: cyan strands, red/yellow base pairs.`
+
+	SourceWave = `// Sine waves: multiple colored waves scroll across screen
+// Each wave: baseY + amp * sin(x*freq + frame*speed)
+// Use ~ and ≈ glyphs, one ANSI color per wave.
+// Waves stack vertically with different frequencies.`
+
+	SourcePlasma = `// Plasma: layered sine functions produce organic patterns
+// v = sin(x+t) + sin(y+t) + sin((x+y)/2+t) + sin(sqrt(x²+y²)+t)
+// Map value to density chars: ░▒▓█▓▒░
+// Color with hue rotation based on plasma value.`
+)

@@ -3,6 +3,7 @@ package ui
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -46,6 +47,12 @@ const (
 
 type tickMsg time.Time
 
+// Speed multiplier levels (index into speedMultipliers).
+var speedMultipliers = []float64{0.25, 0.5, 1.0, 2.0, 4.0}
+var speedLabels = []string{"0.25x", "0.5x", "1x", "2x", "4x"}
+
+const defaultSpeedIdx = 2 // 1x
+
 // Model is the top-level Bubble Tea model.
 type Model struct {
 	state      viewState
@@ -58,6 +65,8 @@ type Model struct {
 	showSource bool
 	exportMsg  string
 	bannerText string // custom text for banner input
+	speedIdx   int    // index into speedMultipliers
+	rng        *rand.Rand
 }
 
 // NewModel returns a fresh Model with all animation categories loaded.
@@ -65,6 +74,8 @@ func NewModel() Model {
 	return Model{
 		categories: allCategories(),
 		bannerText: "HELLO",
+		speedIdx:   defaultSpeedIdx,
+		rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -119,6 +130,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.animCursor = 0
 		m.frame = 0
 		m.showSource = false
+		m.speedIdx = defaultSpeedIdx
 		return m, m.tickCmd()
 	}
 	return m, nil
@@ -167,6 +179,20 @@ func (m Model) handleAnimKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = stateBannerInput
 			m.bannerText = ""
 			return m, nil
+		}
+	case "+", "=":
+		if m.speedIdx < len(speedMultipliers)-1 {
+			m.speedIdx++
+		}
+	case "-", "_":
+		if m.speedIdx > 0 {
+			m.speedIdx--
+		}
+	case "r":
+		// random animation
+		if len(cat.Animations) > 1 {
+			m.animCursor = m.rng.Intn(len(cat.Animations))
+			m.frame = 0
 		}
 	}
 	return m, nil
@@ -235,7 +261,9 @@ func (m Model) tickCmd() tea.Cmd {
 	if interval == 0 {
 		interval = 100 * time.Millisecond
 	}
-	return tea.Tick(interval, func(t time.Time) tea.Msg {
+	// apply speed multiplier (higher multiplier = faster = shorter interval)
+	adjusted := time.Duration(float64(interval) / speedMultipliers[m.speedIdx])
+	return tea.Tick(adjusted, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -266,13 +294,14 @@ func (m Model) menuView() string {
 			cursor = "▸ "
 			style = theme.SelectedItem
 		}
-		line := fmt.Sprintf("%s%s %s", cursor, cat.Icon, cat.Name)
+		count := len(cat.Animations)
+		line := fmt.Sprintf("%s%s %s (%d)", cursor, cat.Icon, cat.Name, count)
 		sb.WriteString(style.Render(line))
 		sb.WriteString("\n")
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(theme.Footer.Render("  Powered by the Charm ecosystem"))
+	sb.WriteString(theme.Footer.Render("  Powered by research from cyperx84/openclaw"))
 	sb.WriteString("\n\n")
 	sb.WriteString(theme.Help.Render("  j/k ↑↓ navigate · enter select · q quit"))
 
@@ -288,15 +317,18 @@ func (m Model) animView() string {
 
 	var sb strings.Builder
 
-	// header
+	// header with animation info
 	header := fmt.Sprintf("  %s %s  (%d/%d)", cat.Icon, cat.Name, m.animCursor+1, len(cat.Animations))
 	sb.WriteString(theme.Header.Render(header))
 	sb.WriteString("\n")
-	sb.WriteString(theme.AnimName.Render("  " + anim.Name))
-	sb.WriteString("  ")
-	sb.WriteString(theme.AnimDesc.Render(anim.Description))
+
+	// info panel: name, description, library, speed
+	infoLine := theme.AnimName.Render("  "+anim.Name) + "  " + theme.AnimDesc.Render(anim.Description)
+	sb.WriteString(infoLine)
 	sb.WriteString("\n")
 	sb.WriteString(theme.Lib.Render("  Lib: " + anim.Library))
+	sb.WriteString("  ")
+	sb.WriteString(theme.Help.Render("Speed: " + speedLabels[m.speedIdx]))
 	sb.WriteString("\n\n")
 
 	// animation preview area
@@ -318,7 +350,7 @@ func (m Model) animView() string {
 	}
 
 	// center spinners in the preview area
-	if cat.Name == "Spinners" && len(content) < 10 {
+	if cat.Name == "Spinners" && len(content) < 20 {
 		padV := previewH / 2
 		padH := previewW / 2
 		var centered strings.Builder
@@ -352,7 +384,7 @@ func (m Model) animView() string {
 	if len(cat.Animations) > 1 {
 		nav += fmt.Sprintf(" (%d animations)", len(cat.Animations))
 	}
-	nav += " · s source · e export"
+	nav += " · r random · +/- speed · s source · e export"
 	if cat.Name == "Text Banners" {
 		nav += " · t custom text"
 	}
@@ -402,7 +434,7 @@ func spinnerCategory() Category {
 	for _, s := range spinners.All() {
 		anims = append(anims, Animation{
 			Name:        s.Name,
-			Description: s.Desc,
+			Description: s.Desc + " [" + s.Category + "]",
 			Library:     "briandowns/spinner (90+ presets) · cli-spinners JSON format",
 			SourceCode:  spinners.SourceSnippet,
 			Interval:    spinners.Interval,
@@ -436,6 +468,26 @@ func effectsCategory() Category {
 				Name: "Starfield", Description: "Warp-speed starfield zooming outward",
 				Library: "Custom · Bubble Tea tick model", SourceCode: effects.SourceStarfield,
 				Interval: 50 * time.Millisecond, RenderFunc: effects.RenderStarfield,
+			},
+			{
+				Name: "Snow", Description: "Falling snowflakes with wind drift and accumulation",
+				Library: "Custom · Bubble Tea tick model", SourceCode: effects.SourceSnow,
+				Interval: 80 * time.Millisecond, RenderFunc: effects.RenderSnow,
+			},
+			{
+				Name: "DNA Helix", Description: "Rotating double helix with base pairs",
+				Library: "Custom · Bubble Tea tick model", SourceCode: effects.SourceDNA,
+				Interval: 60 * time.Millisecond, RenderFunc: effects.RenderDNA,
+			},
+			{
+				Name: "Wave", Description: "Colorful sine waves scrolling across the screen",
+				Library: "Custom · Bubble Tea tick model", SourceCode: effects.SourceWave,
+				Interval: 50 * time.Millisecond, RenderFunc: effects.RenderWave,
+			},
+			{
+				Name: "Plasma", Description: "Organic plasma patterns with color cycling",
+				Library: "Custom · Bubble Tea tick model", SourceCode: effects.SourcePlasma,
+				Interval: 60 * time.Millisecond, RenderFunc: effects.RenderPlasma,
 			},
 		},
 	}
@@ -479,6 +531,21 @@ func splashCategory() Category {
 				Name: "Fade In", Description: "Logo fades in through density characters",
 				Library: "Custom · Block characters ░▒▓█", SourceCode: splash.SourceFade,
 				Interval: 200 * time.Millisecond, Frames: splash.FadeInFrames(),
+			},
+			{
+				Name: "Spinner Splash", Description: "Loading spinner transitions to logo reveal",
+				Library: "Custom · Braille + box drawing", SourceCode: splash.SourceSpinner,
+				Interval: 80 * time.Millisecond, Frames: splash.SpinnerSplashFrames(),
+			},
+			{
+				Name: "Glitch Reveal", Description: "Text un-corrupts from random glitch characters",
+				Library: "Custom · Character substitution", SourceCode: splash.SourceGlitch,
+				Interval: 60 * time.Millisecond, Frames: splash.GlitchFrames(),
+			},
+			{
+				Name: "Scan Line", Description: "Bright scan line sweeps top to bottom revealing content",
+				Library: "Custom · ANSI reverse video", SourceCode: splash.SourceScanLine,
+				Interval: 100 * time.Millisecond, Frames: splash.ScanLineFrames(),
 			},
 		},
 	}
