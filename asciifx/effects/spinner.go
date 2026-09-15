@@ -6,6 +6,7 @@ import (
 
 	"github.com/cyperx84/ascii-animations/asciifx/cell"
 	"github.com/cyperx84/ascii-animations/asciifx/fx"
+	"github.com/cyperx84/ascii-animations/asciifx/spinner/styles"
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
 )
 
@@ -24,7 +25,7 @@ func init() {
 		DefW:   30,
 		DefH:   1,
 		Params: []fx.Param{
-			fx.EnumParam("style", "dots", spinnerStyleNames(), "Spinner frame set."),
+			fx.EnumParam("style", "dots", styles.Names(), "Spinner frame set."),
 			fx.StringParam("label", "Loading", "Text after the spinner; empty for the glyph alone."),
 			fx.FloatParam("speed", 1, 0.1, 10, "Frame rate multiplier."),
 			fx.PaletteParam("palette", "catppuccin", "Colours the glyph cycles through and the label shimmers with."),
@@ -37,7 +38,7 @@ func init() {
 }
 
 type spinner struct {
-	style      spinnerStyle
+	style      styles.Style
 	label      []rune
 	speed      float64
 	shimmer    float64
@@ -51,7 +52,7 @@ func newSpinner(p fx.Values, w, h int, rng *rand.Rand) (fx.Effect, error) {
 		label = safeRunes(l, "?")
 	}
 	return &spinner{
-		style:      spinnerStyles[p.String("style")],
+		style:      mustStyle(p.String("style")),
 		label:      label,
 		speed:      p.Float("speed"),
 		shimmer:    p.Float("shimmer"),
@@ -60,14 +61,24 @@ func newSpinner(p fx.Values, w, h int, rng *rand.Rand) (fx.Effect, error) {
 	}, nil
 }
 
+// mustStyle looks up a frame set. The enum param guarantees a valid name, so a
+// miss is a programming error, like an undeclared param read.
+func mustStyle(name string) styles.Style {
+	st, ok := styles.Lookup(name)
+	if !ok {
+		panic("asciifx: spinner has no style " + name)
+	}
+	return st
+}
+
 func (s *spinner) Step(f *fx.Frame) {
 	b := f.Buf
 	// Spinners do not get content copied in, so start clean every tick.
 	b.Clear()
 	y := (b.H - 1) / 2
 	t := f.T() * s.speed
-	frames := s.style.frames
-	frame := []rune(frames[int(t/s.style.interval)%len(frames)])
+	frames := s.style.Frames
+	frame := []rune(frames[int(t/s.style.Interval.Seconds())%len(frames)])
 	// The glyph drifts through the palette's bright half.
 	glyphColor := s.pal.Cyclic(f.T() * 0.25)
 	glyphColor = tint.Lerp(glyphColor, s.pal.At(1), 0.35)

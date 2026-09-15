@@ -125,16 +125,22 @@ Do **not** mix a string `Layer` onto a lipgloss `Canvas` alongside `teafx.At(...
 whole area it is given, so composing one wipes the drawables beneath it. Use layers and a Compositor
 for a layout, or a Canvas of drawables, not both.
 
-**Spinners.** `teafx.NewSpinner` is a drop-in for `bubbles/spinner` — same `New`, `Update`, `View`,
-`Tick` shape, 14 styles — and `View` emits no padding, so measure it with `Width()`:
+**Spinners.** `asciifx/spinner` is a drop-in for `charm.land/bubbles/v2/spinner`: the same types, the
+same twelve predefined spinners, and the same `New`/`WithSpinner`/`WithStyle`/`TickMsg`/`Update`/
+`View`/`Tick`/`ID`, so migrating is the import line and nothing else.
 
 ```go
-sp, err := teafx.NewSpinner("dots2", teafx.WithLabel("Compiling"))
-// Init: return sp.Tick. Update: m.sp, cmd = m.sp.Update(msg) for every message.
+s := spinner.New(spinner.WithSpinner(spinner.MiniDot))
+// Init: return m.s.Tick (a method value). Update: m.s, cmd = m.s.Update(msg).
 ```
 
-Prefer this over `teafx.New("spinner", ...)`: the style is named, so a typo fails at startup with the
-valid names instead of silently spinning the wrong glyphs.
+Extras, all opt-in: `WithLabel`, `WithPalette`, `WithShimmer`, and this project's 14 single-width
+frame sets via `Named("dots")` or the package vars.
+
+Prefer this over `teafx.New("spinner", ...)`: the frame set is a value rather than a validated param,
+and it defaults to the cheap path. Use `teafx.New("spinner", ...)` only when you want the effect's
+own countdown on the CLI too — a TUI re-renders its whole view on every tick, so the effect's 30fps
+default costs more than a spinner needs.
 
 **Cell-precise composition.** `Model` implements `uv.Drawable`, so `teafx.At(model, uv.Rect(x,y,w,h)`
 composes it into a lipgloss v2 `Canvas` at a rectangle, and `teafx.Content(screen, area)` seeds a

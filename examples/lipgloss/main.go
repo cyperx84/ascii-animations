@@ -27,7 +27,7 @@ import (
 	"github.com/cyperx84/ascii-animations/asciifx/cell"
 	_ "github.com/cyperx84/ascii-animations/asciifx/effects"
 	"github.com/cyperx84/ascii-animations/asciifx/fx"
-	"github.com/cyperx84/ascii-animations/asciifx/teafx"
+	"github.com/cyperx84/ascii-animations/asciifx/spinner"
 	"github.com/cyperx84/ascii-animations/asciifx/term"
 )
 
@@ -66,10 +66,11 @@ func run() error {
 	// The spinner is a drop-in for bubbles/spinner. Here it is driven by hand,
 	// because this program has no Bubble Tea runtime; Tick and Update are the
 	// same calls a Bubble Tea program makes.
-	spin, err := teafx.NewSpinner("dots2", teafx.WithLabel("rendering"), teafx.WithPalette("nord"))
-	if err != nil {
-		return err
-	}
+	spin := spinner.New(
+		spinner.WithSpinner(spinner.Dots2),
+		spinner.WithLabel("rendering"),
+		spinner.WithPalette("nord"),
+	)
 
 	fmt.Print("\x1b[?1049h\x1b[?25l")
 	defer fmt.Print("\x1b[?1049l\x1b[?25h")
@@ -83,7 +84,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		spin, _ = spin.Update(teafx.TickMsg{ID: spin.ID()})
+		spin, _ = spin.Update(spin.Tick())
 
 		// Every layer is positioned in cells and composites with the others.
 		frame := lipgloss.NewCompositor(

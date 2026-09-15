@@ -288,7 +288,7 @@ Three structural mismatches, each verified rather than assumed:
 |---|---|
 | Migrated `cmd/showcase`, `pkg/ui` and `pkg/theme` to Bubble Tea v2 and Lip Gloss v2 | One stack, and the repository can now demonstrate its own integration path. The v1 modules are gone from `go.mod`. |
 | `teafx` uv bridge: `ToUV`, `FromUV`, `UV`, `At`, `Blit`, `Snapshot`, `Content`, `Model.Draw` | A `cell.Buffer` and a `uv.Cell` are near-isomorphic, so eighteen effects become widgets in the stack the user already has, with one conversion instead of a second renderer. |
-| `teafx.NewSpinner`, `SpinnerStyles`, `SetLabel`, `SetStyle`, `WithFPS` | A drop-in for `bubbles/spinner` with the same call shape, so migration is a find-replace. |
+| `asciifx/spinner`, a faithful reimplementation of `bubbles/v2@v2.2.1/spinner` | The first attempt was only bubbles-*shaped*: `NewSpinner(style) (Spinner, error)`, no `Spinner{Frames,FPS}`, no `Tick() tea.Msg`, so migrating meant rewriting call sites. See §8. |
 | `pkg/ui` tests, `examples/lipgloss`, README led by `check` and the agent loop | The winnable audience is CLI intros, agent-authored art and the linter — not dashboards. |
 
 ### Things learned the hard way, and now documented

@@ -70,20 +70,29 @@ frame := lipgloss.NewCompositor(
 
 Run [`examples/lipgloss`](examples/lipgloss) to see it.
 
-**A spinner that replaces `bubbles/spinner`.** Same call shape — `New`, `Update`, `View`, `Tick` —
-14 styles, and `View` emits no padding so a layout can measure it:
+**A spinner that replaces `bubbles/spinner`.** `asciifx/spinner` is a drop-in for
+`charm.land/bubbles/v2/spinner`: same types, same twelve predefined spinners, same `New`,
+`WithSpinner`, `WithStyle`, `TickMsg`, `Update`, `View`, `Tick`, `ID`, and the same tag and ID
+filtering. Migrating is the import line and nothing else:
+
+```diff
+-import "charm.land/bubbles/v2/spinner"
++import "github.com/cyperx84/ascii-animations/asciifx/spinner"
+```
 
 ```go
-sp, err := teafx.NewSpinner("dots2", teafx.WithLabel("Compiling"))
+// unchanged from upstream
+s := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(myStyle))
 
-func (m model) Init() tea.Cmd                 { return sp.Tick }
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	m.sp, cmd = m.sp.Update(msg)                // forward every message; it ignores what is not its own
-	return m, cmd
-}
-func (m model) View() tea.View                { return tea.NewView(m.sp.View()) }
+func (m model) Init() tea.Cmd               { return m.s.Tick }   // a method value, so Tick() returns a Msg
+case spinner.TickMsg: m.s, cmd = m.s.Update(msg); return m, cmd
+view := m.s.View() + " Loading"
 ```
+
+`TestUpstreamProgramShape` in `asciifx/spinner/compat_test.go` is an external test — it may only use
+the exported surface — and is written in upstream's idiom, so the claim is checked by the compiler.
+Three extras are opt-in on top: `WithLabel`, `WithPalette`, `WithShimmer`, plus this project's 14
+single-width frame sets as `Named("dots")` and as package vars.
 
 **Cell-precise composition.** `Model` implements `uv.Drawable`, so it composes into a lipgloss v2
 `Canvas` cell by cell, with `Snapshot` and `Content` to animate a region that is already on screen:
