@@ -88,17 +88,30 @@ func TestMenuNavigation(t *testing.T) {
 }
 
 func TestEnterOpensACategoryAndStartsTicking(t *testing.T) {
-	m, cmd := send(sized(t), key(tea.KeyEnter))
-	if m.state != stateAnimation {
-		t.Fatalf("state = %v after enter, want stateAnimation", m.state)
-	}
-	if cmd == nil {
-		t.Fatal("entering a category must return a tick command")
-	}
-	if m.frame != 0 || m.animCursor != 0 {
-		t.Errorf("frame %d cursor %d after enter, want 0 and 0", m.frame, m.animCursor)
+	for _, open := range []struct {
+		name string
+		key  tea.KeyPressMsg
+	}{
+		{"enter", key(tea.KeyEnter)},
+		// The space bar stringifies as "space" in Bubble Tea v2, not " ", so
+		// a stale " " case matches nothing and the key silently dies.
+		{"space", key(tea.KeySpace)},
+	} {
+		t.Run(open.name, func(t *testing.T) {
+			m, cmd := send(sized(t), open.key)
+			if m.state != stateAnimation {
+				t.Fatalf("state = %v after %s, want stateAnimation", m.state, open.name)
+			}
+			if cmd == nil {
+				t.Fatalf("%s must return a tick command", open.name)
+			}
+			if m.frame != 0 || m.animCursor != 0 {
+				t.Errorf("frame %d cursor %d after %s, want 0 and 0", m.frame, m.animCursor, open.name)
+			}
+		})
 	}
 	// A tick advances the frame and asks for the next one.
+	m, cmd := send(sized(t), key(tea.KeyEnter))
 	m, cmd = send(m, tickMsg{})
 	if m.frame != 1 {
 		t.Errorf("frame = %d after one tick", m.frame)
@@ -110,6 +123,42 @@ func TestEnterOpensACategoryAndStartsTicking(t *testing.T) {
 	m, _ = send(m, key(tea.KeyEsc))
 	if m.state != stateMenu {
 		t.Errorf("state = %v after esc", m.state)
+	}
+}
+
+// TestEveryDocumentedMenuKeyDoesSomething guards the class of bug the space key
+// was: a key name that no longer matches what the key stringifies to in the
+// framework's current major version. The strings here are the ones v2 actually
+// produces, checked against KeyPressMsg.String rather than assumed.
+func TestEveryDocumentedMenuKeyDoesSomething(t *testing.T) {
+	keys := []struct {
+		msg  tea.KeyPressMsg
+		want string
+	}{
+		{key(tea.KeyUp), "up"},
+		{key(tea.KeyDown), "down"},
+		{key(tea.KeyEnter), "enter"},
+		{key(tea.KeySpace), "space"},
+		{typed('j'), "j"},
+		{typed('k'), "k"},
+		{typed('q'), "q"},
+	}
+	for _, c := range keys {
+		if got := c.msg.String(); got != c.want {
+			t.Errorf("key stringifies as %q, but the handlers match %q", got, c.want)
+		}
+	}
+	// Space is the odd one out, and the reason " " must not appear in a
+	// handler: a terminal sends it with Text " ", and String() still reports
+	// "space" because the framework refuses to stringify a bare space. Both
+	// shapes a message can arrive in must match the same case.
+	for _, space := range []tea.KeyPressMsg{
+		{Code: tea.KeySpace},
+		{Code: tea.KeySpace, Text: " "},
+	} {
+		if got := space.String(); got != "space" {
+			t.Errorf("space with Text %q stringifies as %q, want space", space.Text, got)
+		}
 	}
 }
 

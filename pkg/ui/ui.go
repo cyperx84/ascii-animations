@@ -125,7 +125,7 @@ func (m Model) handleMenuKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.menuCursor < len(m.categories)-1 {
 			m.menuCursor++
 		}
-	case "enter", " ":
+	case "enter", "space":
 		m.state = stateAnimation
 		m.animCursor = 0
 		m.frame = 0
