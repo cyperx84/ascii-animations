@@ -48,6 +48,47 @@ asciifx render decrypt --text "ACCESS GRANTED" --at 0.8 --format json
 
 Tune with repeatable `-p key=value`. Unknown keys and bad values fail with the list of valid options, so read the error and fix it rather than guessing.
 
+### Patterns compose
+
+Every `pattern` param takes an expression, not just a name:
+
+```sh
+asciifx render reveal --banner ACME -p 'pattern=invert(center)' --frame -1
+asciifx render reveal --banner ACME -p 'pattern=min(invert(center),wave)' --frame -1
+asciifx render reveal --banner ACME -p 'pattern=blend(dissolve,spiral,0.25)' --frame -1
+```
+
+A pattern is a spatial ordering in [0,1] saying where cells animate first and last, so
+composing orderings mixes *how* an effect spreads without adding an effect. `blend`
+takes a constant weight because an ordering has no time axis; to make a mix move, change
+the effect's own easing instead. `asciifx catalog` publishes the grammar as
+`pattern_syntax`.
+
+### Chain effects
+
+`--then` plays another effect after the previous one. `-p` and `--for` apply to the effect
+named last, so flags read in the order you write them:
+
+```sh
+asciifx render reveal --banner ACME -p pattern=center --then fire --for 1s --frame -1
+asciifx play reveal --text HELLO --inline --then shine --for 3s
+asciifx render reveal --text HI --for 500ms --then shine --for 1s --json  # frames_total: 46
+```
+
+An effect that loops needs `--for`, because a chain can only advance past an effect that
+finishes; `--for` also overrides a finite effect's own length. Content is shared: every
+transition in a chain transforms the same text, so a chain cannot change its subject
+part-way through. `render --format json` reports a chain as `"steps": ["reveal","fire"]`
+with params keyed `"1.pattern"`, `"2.palette"`.
+
+### Dither, don't guess
+
+In the 16- and 256-colour profiles, gradients are quantised with ordered (Bayer)
+dithering by default: the encode picks between the two nearest palette entries so the
+local average lands near the true colour. It is a pure function of colour and cell, so a
+still region stipples rather than shimmering. `--dither none|bayer4|bayer8` changes it;
+it is ignored for truecolor (nothing to dither onto).
+
 ## 4. Lint any art you write by hand
 
 LLMs misalign 2D ASCII. Before committing banners, frames or spinner sets:
@@ -121,14 +162,14 @@ func intro() error {
 - **Glyphs:** single-width glyphs only in animated regions. No emoji; widths vary 2–6 cells across terminals.
 - **Restore on exit:** always restore cursor, colours and the alt screen, including on SIGINT and panic.
 - **Static fallback:** one static frame when not a TTY, under `CI`, with `TERM=dumb`, or with `ASCIIFX_REDUCED_MOTION=1`. `NO_COLOR` removes colour but not motion.
-- **Drawing:** diff cells, write once per frame, and wrap frames in synchronized output (`CSI ?2026h/l`). Never clear the screen each frame.
-- **Frame rate:** about 30 fps locally, 10–15 fps over SSH or tmux. Drop late frames; never queue them.
-- **Colour:** gradients in OKLab. Fade to the terminal background (unset colour), not black. Real tools should look right in 16 colours; check with `--profile 16`.
+- **Drawing:** diff cells, write once per frame, and wrap frames in synchronized output (`CSI ?2026h/l`). Never clear the screen each frame. Run `asciifx play --probe` to ask the terminal with DECRQM instead of trusting `TERM`; `ASCIIFX_SYNC=0` overrides.
+- **Frame rate:** about 30 fps locally, 10–15 fps over SSH or tmux. `Detect` caps it automatically (`ASCIIFX_FPS` overrides). Drop late frames; never queue them.
+- **Colour:** gradients in OKLab. Fade to the terminal background (unset colour), not black. Real tools should look right in 16 colours; check with `--profile 16`. Palette profiles dither by default (`--dither none` to disable).
 - **Determinism:** seeded randomness and injected time, so frames can be snapshot-tested.
 
 ## References
 
-- `docs/research.md`: ecosystem survey, terminal support matrix, formats and licensing cautions.
+- `docs/research.md`: ecosystem survey, terminal support matrix, formats and licensing cautions, and an addendum listing every borrowed idea with the file that carries it.
 - [references/libraries.md](references/libraries.md): other-language libraries (tachyonfx, TerminalTextEffects, Ink/ora, Textual) when asciifx is not an option.
 - [references/tools.md](references/tools.md): editors, converters (chafa), recorders (VHS, asciinema).
 - [references/templates.md](references/templates.md): art and font collections (check licences).

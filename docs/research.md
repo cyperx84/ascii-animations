@@ -156,3 +156,103 @@ No "Lottie for terminals" or cross-language animation spec exists.
 - **Vendored source beats dependencies** for agents, because they can read and edit what they installed.
 - **Skill layout:** a slim router SKILL.md plus on-demand references (gfargo).
 - **Agent terminal drivers** (tui-test, agent-tui, agent-tty) capture whole screens and are not effect-aware.
+
+## 6. Addendum: re-survey and what was borrowed
+
+Re-checked 2026-09-15 against the live sources below. Everything in this section is
+implemented in this repo; each item names the file that carries it. This section is the
+breadcrumb trail, so a later reader can tell a deliberate borrow from an accident.
+
+### Sources read this round
+
+- **tachyonfx** (ratatui/tachyonfx) — read the repo tree and README. Confirmed: `src/dsl/`
+  holds a full effect DSL (tokenizer, parser, completions engine, method chains, a
+  `dsl_format` round-trip), `src/pattern/` has 12 pattern types with combined/blend/inverted
+  combinators, `src/cell_filter/` has predicate + analyzer + processor, `src/fx/` has ~40
+  effects, plus `effect_manager`, `effect_timer`, `interpolation`, `color_space`,
+  `simple_rng` and a `widget/effect_span`. Compositions are `sequence`, `parallel`,
+  `repeat`, `ping_pong`, `delay`, `prolong_start/end`, `freeze_at`, `remap_alpha`,
+  `run_once`, `never_complete`, `with_duration`. Cell targeting is
+  `CellFilter::{FgColor, Outer(Margin), AllOf}`. There is a browser editor (FTL) and
+  `EffectDsl::compile("fx::dissolve(500)")`. WASM and `no_std` support.
+- **TerminalTextEffects** (ChrisBuilds/terminaltexteffects) — 37 effects. The borrowable
+  ideas are the ones this repo already had: a typed effect config dataclass that is
+  *automatically* exposed as CLI arguments, per-effect `-h`, canvas/anchor options
+  (`--canvas-width`, `--anchor-canvas`, `--anchor-text`, `--reuse-canvas`, `--no-eol`),
+  `--frame-rate`, `--xterm-colors`, `--terminal-background-color`,
+  `--existing-color-handling`, and `--random-effect` with include/exclude lists. Paths with
+  bezier waypoints, scenes, and an event handler remain unimplemented here.
+- **sysc-Go** (Nomadcxx) — the closest Go peer. `animations/` is flat files plus a
+  `registry.go`; 12 themes; a TUI with a built-in BIT art editor and **174 `.bit` fonts**;
+  assets ship as GIFs. Its lesson is packaging (installer, AUR, TUI font browser), not
+  engine architecture.
+- **tui-vfx** (crates.io) — a newer Rust effects crate; page did not extract, so nothing
+  is claimed about it here.
+- **ASCII Motion** docs (`docs.ascii-motion.com`) — plain-text, structured-JSON and
+  session export; JSON import. Session files are JSON with either `.json` or `.asciimtn`.
+  Still the best shape to borrow for an editor format; still not adopted.
+- **DECRQM / DEC synchronized update** (ansicode.eversources.app) — `CSI ? Pd $ p` queries
+  the mode; reply is `CSI ? Pd ; Ps $ y` with Ps 0 unrecognised, 1 set, 2 reset, 3
+  permanently set, 4 permanently reset. Confirmed against the spec pages.
+
+### Implemented
+
+| Borrow | Source | Where |
+|---|---|---|
+| Ordered (Bayer) palette dithering, no error diffusion | research §3 rule, previously unimplemented | `asciifx/tint/dither.go`, `asciifx/tint/quantize.go`, `asciifx/term/encode.go`, `--dither` |
+| Position-stable quantisation, so still frames do not crawl | same | `To256At`/`To16At`, cache keyed by colour so dithering does not grow the cache |
+| Dither picks between the two nearest entries by projected fraction | classic ordered dithering; tachyonfx's nearest-entry model | `pickDithered`, `between`, `twoNearest` |
+| Pattern combinators `min`/`max`/`blend`/`invert` | tachyonfx `CombinedPattern`, `BlendPattern`, `InvertedPattern` | `asciifx/fx/pattern.go`, `ParsePattern` |
+| Missing pattern shapes `checkerboard`, `wave` | tachyonfx `CheckerboardPattern`, `WavePattern` | `asciifx/fx/pattern.go` |
+| Real capability negotiation with a bounded timeout and an override for every probe | research §3 rule; tachyonfx and TTE do not probe at all | `asciifx/term/probe.go`, `Caps.SyncKnown`, `play --probe`, `ASCIIFX_SYNC` |
+| Transport-aware frame-rate cap (30 local, 15 SSH/tmux/screen) | research §3 rule | `asciifx/term/caps.go` `transportFPS`, `ASCIIFX_FPS` |
+| Golden frames at fixed ticks with a forced profile, marked `-text` | research §3 rule | `cmd/asciifx/golden_test.go`, `cmd/asciifx/testdata/*.golden`, `.gitattributes` |
+| Pattern grammar exposed to agents | research §5 "machine-readable registry" | `fx.PatternGrammar`, `catalog.json.pattern_syntax` |
+| Composition reachable from the CLI: a chain of effects with per-step params | tachyonfx `sequence` + method chains; the existing `fx.Sequence` was dead code from the CLI's side | `fx.Compose`, `fx.Timed`, `--then`, `--for`, scoped `-p` |
+| Per-step seed derivation, so appending a link does not invalidate earlier frames | tachyonfx's stateless effects make this automatic; here effects capture a seed at construction | `Compose`'s `New`, tested by `TestComposeAppendingAStepKeepsEarlierFrames` |
+
+### Verified numbers
+
+Ordered dithering was checked, not assumed. `TestDitherReducesPerceivedError` renders a
+gradient, quantises it, and compares the mean colour of each 8x8 block against the mean of
+the ideal colours there — the quantity an eye integrates, since per-cell error *rises* by
+design under dithering. Mean block error in OKLab Euclidean distance:
+
+| Profile | none | bayer4 | bayer8 |
+|---|---|---|---|
+| 16 | 0.07333 | 0.05469 | 0.05457 |
+| 256 | 0.01960 | 0.01175 | 0.01185 |
+
+That is a 26% reduction at 16 colours and 40% at 256. A lightness-only dither was tried
+first and managed only 0.4–0.8%, because the error in a saturated palette is mostly chroma;
+dithering along the segment between the two nearest entries is what recovers it.
+
+### Deliberately not taken
+
+- **Mode 2027 (grapheme clustering) probing** — this engine emits single-width glyphs only,
+  so clustering cannot change what it draws. Probing it would be dead code.
+- **OSC 11 background query** — the value has nowhere to go until effects can fade to the
+  terminal background rather than to a palette stop. Probing it now would be dead code.
+- **Error diffusion** — kept out on purpose; see the `Dither` doc comment.
+- **An effect DSL and completions engine** — tachyonfx's `src/dsl/` is a large surface (a
+  tokenizer, parser, an editor completion engine and a formatter). The typed-params-plus-CLI
+  model already gives agents validation and "did you mean" hints for a fraction of the code.
+  Worth revisiting only if agents start *writing* effects rather than invoking them.
+- **Time-varying pattern blend** — an ordering has no time axis here, so `blend` takes a
+  constant weight. TachyonFX can crossfade patterns over an effect's lifetime; that belongs
+  in the effect's easing, not its pattern.
+- **Fast-forwarding a composition past a simulation** — `Run.Resize` resumes a pure
+  transition by jumping to its tick, because a transition is a function of the tick. A
+  looping child is not: its state depends on how many times it has been stepped, so a
+  resized run containing one restarts that step instead of resuming it. Making this exact
+  would mean replaying from tick zero on every resize, which for a ten-minute ambient run
+  is thousands of ticks of work in the middle of a redraw. Documented in `Compose`, and
+  either behaviour is defensible; restarting is the cheaper one.
+- **Per-step content** — every transition in a chain transforms the same buffer, so
+  "reveal A, then reveal B" is not expressible. TachyonFX has the same model (effects
+  post-process one finished buffer), so this is a property of the shader architecture
+  rather than a shortcut here.
+- **`--then` in `list`/`info`/`catalog`** — a composition is per-invocation and never
+  registered, so the registry keeps describing effects and the shell composes them. A
+  registered composition would need a name and a file format, which is the DSL this repo
+  has already declined.

@@ -10,6 +10,8 @@ go install github.com/cyperx84/ascii-animations/cmd/asciifx@latest
 asciifx list                                             # 18 effects: ambient, transitions, spinner
 asciifx play reveal --banner HELLO -p pattern=center     # animate in your terminal
 asciifx render fire --frame 45 --format luma             # see any frame as text
+asciifx render reveal -p 'pattern=min(invert(center),wave)'   # compose reveal orders
+asciifx render reveal --banner HI --then fire --for 1s --frame -1  # chain effects
 asciifx check art.txt                                    # lint ASCII art for width problems
 asciifx catalog --out .                                  # catalog.json + llms.txt for agents
 ```
@@ -20,24 +22,30 @@ asciifx catalog --out .                                  # catalog.json + llms.t
   - Loops over content: rainbow, shine.
   - A spinner with 14 styles.
 - **Beauty:** OKLab gradients over space and time, eased per-cell progress along spatial patterns, flash-and-settle colour envelopes, and half-block and braille sub-cell resolution.
+  - Ordered (Bayer) dithering in the 16- and 256-colour profiles cuts gradient banding by roughly a quarter to a third. It is a pure function of colour and cell, so a still frame stipples instead of crawling; error diffusion is deliberately not used.
+  - Patterns compose: `invert(A)`, `min(A,B)`, `max(A,B)`, `blend(A,B,T)` nested to any depth.
+  - Effects chain: `--then <effect>` plays the next one, `--for 2s` gives a looping one a length, and `-p` applies to the effect named last. Content is shared across the chain.
 - **Agent-ready:**
   - Every run is a pure function of (effect, params, size, seed, tick).
   - `render` prints frames as plain text, a luma map or JSON with colour runs.
   - Params are typed and validated, with "did you mean" hints.
-  - `llms.txt` and `catalog.json` describe the whole surface.
+  - `llms.txt` and `catalog.json` describe the whole surface, including the pattern grammar.
   - `skill/SKILL.md` teaches the render → inspect → tune → embed loop.
+  - Golden frames under `cmd/asciifx/testdata/` pin the output of every glyph class and format.
 - **Terminal-safe:**
   - Only single-width glyphs.
-  - Diffed frames wrapped in synchronized output (mode 2026).
+  - Diffed frames wrapped in synchronized output (mode 2026), with `--probe` to ask the terminal (DECRQM) instead of assuming, and `ASCIIFX_SYNC` to override.
   - 256/16/no-colour fallbacks.
   - A static frame for pipes, CI, `TERM=dumb` and `ASCIIFX_REDUCED_MOTION=1`.
+  - Frame rate capped to 15 fps over SSH, tmux and screen.
   - Terminal restored on exit, key press, SIGINT and panic.
 - **Embed it:**
   - Go: `fx.NewRun` + `term.Play`.
   - Bubble Tea v2: the `asciifx/teafx` component (see `examples/bubbletea`).
   - Any other language: shell out to `asciifx play` / `cast` / `render`.
 
-Research behind the design: [docs/research.md](docs/research.md).
+Research behind the design, and what was borrowed from which project:
+[docs/research.md](docs/research.md).
 
 ## Showcase
 
