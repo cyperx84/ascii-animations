@@ -32,9 +32,14 @@ var lastID atomic.Int64
 
 // TickMsg advances the Model whose ID matches. Other instances ignore it, so
 // several effects can run in one program without cross-talk.
+//
+// tag names the tick chain the message belongs to. A message carrying a stale
+// tag is dropped, which is what stops a second Tick call from starting a second
+// chain and doubling the frame rate for good. A zero ID or tag is a wildcard, so
+// a message built by hand still works.
 type TickMsg struct {
 	ID  int64
-	gen int64
+	tag int
 }
 
 // Model is a Bubble Tea v2 component that plays one effect.
@@ -46,7 +51,7 @@ type Model struct {
 	Loop bool
 
 	id  int64
-	gen int64
+	tag int
 	run *fx.Run
 	buf *cell.Buffer
 }
@@ -78,13 +83,14 @@ func (m Model) Run() *fx.Run { return m.run }
 // Init starts ticking.
 func (m Model) Init() tea.Cmd { return m.tick() }
 
+// tick schedules the next tick of the chain the model is currently on.
 func (m Model) tick() tea.Cmd {
 	if m.run == nil {
 		return nil
 	}
-	id, gen := m.id, m.gen
+	id, tag := m.id, m.tag
 	return tea.Tick(time.Second/time.Duration(m.run.FPS()), func(time.Time) tea.Msg {
-		return TickMsg{ID: id, gen: gen}
+		return TickMsg{ID: id, tag: tag}
 	})
 }
 
@@ -96,9 +102,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case TickMsg:
-		if msg.ID != m.id || msg.gen != m.gen {
+		if msg.ID != 0 && msg.ID != m.id {
 			return m, nil
 		}
+		if msg.tag != 0 && msg.tag != m.tag {
+			// A tick from a chain that has been superseded. Dropping it is what
+			// collapses duplicate chains instead of running at their sum.
+			return m, nil
+		}
+		m.tag++
 		if m.run.Done() {
 			if !m.Loop {
 				return m, nil
@@ -156,12 +168,13 @@ func (m *Model) SetSize(w, h int) {
 }
 
 // Restart rewinds to the first frame and returns the command that resumes
-// ticking. Ticks already in flight from before the restart are discarded.
+// ticking. Bumping the tag makes every tick already in flight stale, so the
+// old chain dies instead of racing the new one.
 func (m *Model) Restart() tea.Cmd {
 	if m.run == nil {
 		return nil
 	}
-	m.gen++
+	m.tag++
 	m.buf, _ = m.run.Seek(0)
 	return m.tick()
 }

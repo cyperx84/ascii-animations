@@ -162,13 +162,13 @@ func (s *Spinner) build() error {
 	if err != nil {
 		return err
 	}
-	id, gen := s.m.id, s.m.gen
+	id, tag := s.m.id, s.m.tag
 	if id == 0 {
 		// A distinct id per instance, so several spinners in one program do
 		// not answer each other's ticks.
 		id = lastID.Add(1)
 	}
-	s.m = Model{id: id, gen: gen, run: run, buf: buf}
+	s.m = Model{id: id, tag: tag, run: run, buf: buf}
 	s.cfg.fps = fps
 	return nil
 }
