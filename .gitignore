@@ -1,6 +1,7 @@
 # Binaries
-ascii-animations
-showcase
+/ascii-animations
+/showcase
+/bubbletea
 *.exe
 *.dll
 *.so
