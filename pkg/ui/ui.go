@@ -15,8 +15,8 @@ import (
 	"github.com/cyperx84/ascii-animations/pkg/splash"
 	"github.com/cyperx84/ascii-animations/pkg/theme"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Animation represents a single animation that can be previewed.
@@ -79,9 +79,9 @@ func NewModel() Model {
 	}
 }
 
-func (m Model) Init() tea.Cmd {
-	return tea.SetWindowTitle("ASCII Animations Showcase")
-}
+// Init starts with no command: the menu needs no ticks, and the window title
+// is a property of the View in Bubble Tea v2 rather than a command.
+func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -90,7 +90,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		m.exportMsg = ""
 		return m.handleKey(msg)
 
@@ -101,7 +101,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateMenu:
 		return m.handleMenuKey(msg)
@@ -113,7 +113,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleMenuKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -136,7 +136,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleAnimKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleAnimKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	cat := m.categories[m.menuCursor]
 	switch msg.String() {
 	case "q", "esc":
@@ -198,7 +198,7 @@ func (m Model) handleAnimKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleBannerInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleBannerInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -218,9 +218,10 @@ func (m Model) handleBannerInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.bannerText = m.bannerText[:len(m.bannerText)-1]
 		}
 	default:
-		ch := msg.String()
-		if len(ch) == 1 && len(m.bannerText) < 20 {
-			m.bannerText += ch
+		// Key.Text is the literal text a key produced, so this accepts
+		// shifted and pasted characters that String would spell out.
+		if r := []rune(msg.Text); len(r) == 1 && len(m.bannerText) < 20 {
+			m.bannerText += string(r)
 		}
 	}
 	return m, nil
@@ -268,7 +269,20 @@ func (m Model) tickCmd() tea.Cmd {
 	})
 }
 
-func (m Model) View() string {
+// View returns the styled frame plus the screen mode it needs. Bubble Tea v2
+// moved the alternate screen, the mouse mode and the window title from program
+// options onto the View, so the model carries them itself.
+func (m Model) View() tea.View {
+	v := tea.NewView(m.body())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	v.WindowTitle = "ASCII Animations Showcase"
+	return v
+}
+
+// body is the frame without the v2 screen settings, so it can be tested and
+// composed on its own.
+func (m Model) body() string {
 	switch m.state {
 	case stateMenu:
 		return m.menuView()

@@ -1,7 +1,7 @@
 // Package theme provides Dracula color palette and lipgloss styles for the TUI.
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 // Dracula palette colors.
 var (
