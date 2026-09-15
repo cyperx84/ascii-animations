@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/charmbracelet/ultraviolet v0.0.0-20260910203606-6c9e17dc7a16 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260910203606-6c9e17dc7a16
 	github.com/mattn/go-runewidth v0.0.30
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/sys v0.48.0
