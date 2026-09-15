@@ -1,7 +1,10 @@
 // Package banners provides block-letter text banner rendering.
 package banners
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 // Block font: each letter is 5 lines tall.
 var blockFont = map[rune][5]string{
@@ -251,6 +254,30 @@ func AllFonts() []Font {
 		{"Thick", thickFont},
 		{"Ghost", ghostFont},
 	}
+}
+
+// renderable is the union of every font's glyphs, built once.
+var renderable = func() map[rune]bool {
+	set := map[rune]bool{}
+	for _, f := range AllFonts() {
+		for r := range f.Chars {
+			set[r] = true
+		}
+	}
+	return set
+}()
+
+// Renderable reports whether a banner font has a glyph for r.
+//
+// Render draws a rune it has no glyph for as a blank, so text outside this set
+// silently becomes space. A text field that accepts such a rune therefore looks
+// like it did nothing, and the character is still in the string. Callers that
+// take banner text from a user should reject anything this returns false for.
+//
+// The check uppercases first, because Render does: lowercase input is drawable,
+// it is just drawn as its capital.
+func Renderable(r rune) bool {
+	return renderable[unicode.ToUpper(r)]
 }
 
 // Render renders text using the given font.

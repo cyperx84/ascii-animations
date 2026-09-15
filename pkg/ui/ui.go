@@ -53,6 +53,10 @@ var speedLabels = []string{"0.25x", "0.5x", "1x", "2x", "4x"}
 
 const defaultSpeedIdx = 2 // 1x
 
+// maxBannerRunes bounds the custom banner text. It counts runes rather than
+// bytes so the limit is the same however wide the characters are.
+const maxBannerRunes = 20
+
 // Model is the top-level Bubble Tea model.
 type Model struct {
 	state      viewState
@@ -214,14 +218,19 @@ func (m Model) handleBannerInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.frame = 0
 		return m, m.tickCmd()
 	case "backspace":
-		if len(m.bannerText) > 0 {
-			m.bannerText = m.bannerText[:len(m.bannerText)-1]
+		// Slice runes, not bytes: a multi-byte rune removed by byte would leave
+		// an invalid UTF-8 prefix behind.
+		if r := []rune(m.bannerText); len(r) > 0 {
+			m.bannerText = string(r[:len(r)-1])
 		}
 	default:
-		// Key.Text is the literal text a key produced, so this accepts
-		// shifted and pasted characters that String would spell out.
-		if r := []rune(msg.Text); len(r) == 1 && len(m.bannerText) < 20 {
-			m.bannerText += string(r)
+		// Key.Text is the literal text a key produced, so this accepts shifted
+		// and pasted characters that String would spell out. Only runes some
+		// font can actually draw are accepted, because Render substitutes a
+		// blank for anything else: taking them would look like nothing
+		// happened while still putting the rune in the string.
+		if r := []rune(msg.Text); len(r) == 1 && banners.Renderable(r[0]) && len([]rune(m.bannerText)) < maxBannerRunes {
+			m.bannerText += string(r[0])
 		}
 	}
 	return m, nil

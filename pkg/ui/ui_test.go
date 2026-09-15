@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -218,6 +219,13 @@ func TestBannerInputUsesKeyText(t *testing.T) {
 	if m.bannerText != "O" {
 		t.Fatalf("banner text = %q after backspace", m.bannerText)
 	}
+	// A space is text here, not the menu's "open" key, and must reach the
+	// field even though it stringifies as "space".
+	m, _ = send(m, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if m.bannerText != "O " {
+		t.Fatalf("banner text = %q after space", m.bannerText)
+	}
+	m, _ = send(m, key(tea.KeyBackspace))
 	m, _ = send(m, typed('K'))
 	m, cmd := send(m, key(tea.KeyEnter))
 	if m.state != stateAnimation {
@@ -243,6 +251,96 @@ func TestBannerInputUsesKeyText(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestBannerInputIsRuneSafe covers two bugs that only appear together: the
+// field accepts whatever a key produced, so a multi-byte rune could be typed,
+// and backspace then removed one byte of it, leaving invalid UTF-8. Runes no
+// font can draw are refused outright, because Render substitutes a blank for
+// them and the field would look like it did nothing.
+func TestBannerInputIsRuneSafe(t *testing.T) {
+	m := newBannerInput(t)
+
+	// A rune with no glyph leaves the field alone rather than putting an
+	// invisible character in it.
+	for _, bad := range []rune{'é', '#', '?', '@', '-'} {
+		m, _ = send(m, tea.KeyPressMsg{Code: bad, Text: string(bad)})
+		if m.bannerText != "" {
+			t.Fatalf("field holds %q after unrenderable %q", m.bannerText, bad)
+		}
+	}
+	// The fonts cover space, '!', digits and A-Z, and nothing else. Lowercase
+	// is accepted because Render uppercases, so typing normally works.
+	const typed_ = "!9az "
+	for _, r := range typed_ {
+		if !banners.Renderable(r) {
+			t.Fatalf("%q should be renderable by at least one font", r)
+		}
+		m, _ = send(m, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if m.bannerText != typed_ {
+		t.Fatalf("field holds %q, want %q", m.bannerText, typed_)
+	}
+	// Backspace removes one rune, never one byte.
+	for i := 0; i < len([]rune(typed_)); i++ {
+		m, _ = send(m, key(tea.KeyBackspace))
+		if !utf8.ValidString(m.bannerText) {
+			t.Fatalf("field became invalid UTF-8 at step %d: %q", i, m.bannerText)
+		}
+	}
+	if m.bannerText != "" {
+		t.Fatalf("field holds %q after backspacing everything", m.bannerText)
+	}
+	// Backspacing an empty field is a no-op, not a panic.
+	m, _ = send(m, key(tea.KeyBackspace))
+	if m.bannerText != "" {
+		t.Fatalf("field holds %q after backspacing nothing", m.bannerText)
+	}
+
+	// Confirm what the field built, and that lowercase reaches the category
+	// uppercased, as the old byte-slicing implementation also did.
+	m, _ = send(m, tea.KeyPressMsg{Code: 'a', Text: "a"})
+	m, _ = send(m, tea.KeyPressMsg{Code: 'z', Text: "z"})
+	m, _ = send(m, key(tea.KeyEnter))
+	if m.state != stateAnimation {
+		t.Fatalf("state = %v after confirming", m.state)
+	}
+	for _, cat := range m.categories {
+		if cat.Name != "Text Banners" {
+			continue
+		}
+		for _, a := range cat.Animations {
+			if !strings.Contains(a.Name, "AZ") {
+				t.Fatalf("animation %q does not name the uppercased text", a.Name)
+			}
+		}
+	}
+}
+
+// TestBannerLimitCountsRunes pins the length limit to characters rather than
+// bytes, so it means the same thing whatever is typed.
+func TestBannerLimitCountsRunes(t *testing.T) {
+	m := newBannerInput(t)
+	for i := 0; i < maxBannerRunes+10; i++ {
+		m, _ = send(m, typed('A'))
+	}
+	if got := len([]rune(m.bannerText)); got != maxBannerRunes {
+		t.Fatalf("field holds %d runes, want the limit of %d", got, maxBannerRunes)
+	}
+}
+
+// newBannerInput walks to the Text Banners category and opens the text field.
+func newBannerInput(t *testing.T) Model {
+	t.Helper()
+	m := sized(t)
+	for m.categories[m.menuCursor].Name != "Text Banners" {
+		m, _ = send(m, typed('j'))
+	}
+	m, _ = send(m, key(tea.KeyEnter), typed('t'))
+	if m.state != stateBannerInput {
+		t.Fatalf("state = %v, want the text field", m.state)
+	}
+	return m
 }
 
 func TestBannerInputCancelKeepsTheOldText(t *testing.T) {
