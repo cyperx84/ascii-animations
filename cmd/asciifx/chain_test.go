@@ -143,3 +143,95 @@ func TestChainPlayAndCastBuild(t *testing.T) {
 		t.Errorf("cast title = %q", title)
 	}
 }
+
+// TestFilterBindsToTheLastNamedEffect checks --filter is step-scoped like --for,
+// and that the binding is visible in the JSON an agent reads.
+func TestFilterBindsToTheLastNamedEffect(t *testing.T) {
+	f := frameOf(t, "render", "reveal", "--text", "HI", "--w", "24", "--h", "6",
+		"--then", "fire", "--for", "1s", "--filter", "not(ink)", "--frame", "0", "--seed", "1")
+	if got := f.Params["2.filter"]; got != "not(ink)" {
+		t.Errorf("2.filter = %q, want not(ink)", got)
+	}
+	if _, ok := f.Params["1.filter"]; ok {
+		t.Error("the filter leaked onto step 1")
+	}
+
+	// On a single effect it is reported unprefixed, like the params are.
+	one := frameOf(t, "render", "glitch", "--text", "HI", "--w", "20", "--h", "4", "--frame", "3", "--filter", "outer(1)")
+	if got := one.Params["filter"]; got != "outer(1)" {
+		t.Errorf("filter = %q, want outer(1)", got)
+	}
+	// The last-named effect is the one that gets it, so --filter before --then
+	// applies to the first effect; on a chain that is step 1.
+	two := frameOf(t, "render", "reveal", "--text", "HI", "--w", "24", "--h", "6", "--filter", "inner(1)",
+		"--then", "reveal", "--for", "500ms", "--frame", "0", "--seed", "1")
+	if got := two.Params["1.filter"]; got != "inner(1)" {
+		t.Errorf("1.filter = %q, want inner(1)", got)
+	}
+}
+
+func TestFilterErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"a content selector needs content",
+			[]string{"render", "fire", "--w", "20", "--h", "5", "--filter", "ink"},
+			"no content"},
+		{"...and says how to fix it",
+			[]string{"render", "fire", "--w", "20", "--h", "5", "--filter", "not(ink)"},
+			"--then"},
+		{"a typo gets a suggestion",
+			[]string{"render", "reveal", "--text", "HI", "--filter", "nto(ink)"},
+			`did you mean "not"`},
+		{"an unknown name gets a suggestion",
+			[]string{"render", "reveal", "--text", "HI", "--filter", "nke"},
+			`did you mean "ink"`},
+		{"a bad expression is reported with its step",
+			[]string{"render", "reveal", "--text", "HI", "--then", "fire", "--for", "1s", "--filter", "all(ink"},
+			"step 2"},
+		{"an empty filter is a usage error",
+			[]string{"render", "reveal", "--text", "HI", "--filter", ""},
+			"--filter needs a selector"},
+		{"a geometry filter is fine without content",
+			[]string{"render", "fire", "--w", "20", "--h", "5", "--filter", "outer(1)", "--frame", "3"},
+			""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			code, _, stderr := runCLI(t, "", c.args...)
+			if c.want == "" {
+				if code != exitOK {
+					t.Fatalf("exit %d, stderr %q", code, stderr)
+				}
+				return
+			}
+			if code != exitUsage {
+				t.Fatalf("exit %d, want %d (stderr %q)", code, exitUsage, stderr)
+			}
+			if !strings.Contains(stderr, c.want) {
+				t.Fatalf("stderr %q lacks %q", stderr, c.want)
+			}
+		})
+	}
+}
+
+// TestFilterChangesTheFrame is the CLI-level proof that a filter does something:
+// the same invocation with and without it must differ, and the filtered one must
+// keep the banner fire would otherwise consume.
+func TestFilterChangesTheFrame(t *testing.T) {
+	base := []string{"render", "reveal", "--banner", "HI", "--w", "24", "--h", "8",
+		"--frame", "-1", "--format", "plain", "--seed", "1", "--then", "fire", "--for", "1s"}
+	_, unfiltered, _ := runCLI(t, "", base...)
+	_, filtered, _ := runCLI(t, "", append(append([]string{}, base...), "--filter", "not(ink)")...)
+	if unfiltered == filtered {
+		t.Fatal("the filter changed nothing")
+	}
+	if strings.Contains(unfiltered, "███") {
+		t.Fatal("fire was supposed to consume the banner without the filter")
+	}
+	if !strings.Contains(filtered, "███") {
+		t.Fatalf("the filtered frame lost the banner:\n%s", filtered)
+	}
+}

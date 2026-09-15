@@ -19,12 +19,30 @@ Chaining:
   --for D             give the effect named last a duration, e.g. 2s. Required
                       for an effect that loops, and it overrides a finite
                       effect's own length.
+  --filter EXPR       restrict which cells the effect named last may change.
+                      Cells the selector rejects are left exactly as the effect
+                      found them, so the effect runs unchanged and its output is
+                      clipped. Selectors:
+                        ink                 cells with a visible glyph
+                        not(A)              the opposite of A
+                        all(A,B,..)         every one of them
+                        any(A,B,..)         at least one of them
+                        inner(H[,V])        inside a margin, V defaulting to H
+                        outer(H[,V])        outside that margin
+                        fg(#rrggbb|none)    an exact foreground colour
+                      For example --filter 'not(ink)' lets an ambient effect
+                      burn around a banner instead of through it, and
+                      --filter 'all(ink, inner(1))' animates text inside a frame.
+                      A filter that reads the cell (ink, fg and anything built
+                      from them) needs content in the run, because there is
+                      nothing to read otherwise; inner and outer do not.
 
--p and --for apply to the effect named last, so flags read in the order they
-are written:
+-p, --for and --filter apply to the effect named last, so flags read in the
+order they are written:
 
   asciifx render reveal --text HI -p pattern=center \
-      --then shine --for 2s -p palette=matrix
+      --then shine --for 2s -p palette=matrix \
+      --then fire --for 1s --filter 'not(ink)'
 
 Content is shared: every transition in a chain transforms the same text, so a
 chain cannot change its subject part-way through. A chain of one effect is the
@@ -86,7 +104,10 @@ Formats:
                       holds, per row, runs {"x","len","fg","bg","attrs"} of
                       coloured cells (unstyled runs omitted). "steps" lists a
                       chain's effects in order, and its params are keyed
-                      "<step>.<name>". Several frames => array.
+                      "<step>.<name>". A --filter expression is reported beside
+                      them as "filter", or "<step>.filter" for a chain, so a
+                      frame can be reproduced from the JSON alone. Several
+                      frames => array.
 Several frames in text formats are separated by "--- frame N (t=0.40s)".
 
 ` + runFlagsHelp + `
@@ -95,6 +116,8 @@ Examples:
   asciifx render reveal --banner HI --frames 0,12,-1 --format json
   asciifx render fire --at 2 --format luma --w 40 --h 10
   asciifx render reveal --banner HI --then fire --for 1s --frame -1
+  asciifx render reveal --banner HI --then fire --for 1s --filter 'not(ink)'
+  asciifx render glitch --text ACCESS --filter 'all(ink,inner(2,1))'
   asciifx render reveal --every 10 | asciifx check -
 `,
 			run: cmdRender,
@@ -125,6 +148,7 @@ Examples:
   asciifx play fire --limit 5s
   asciifx play reveal --banner HELLO --inline -p palette=synthwave
   asciifx play reveal --text HELLO --inline --then shine --for 3s
+  asciifx play reveal --banner HI --then fire --for 5s --filter 'not(ink)'
 `,
 			run: cmdPlay,
 		},

@@ -148,6 +148,11 @@ func anyNeedsContent(ss []Selector) bool {
 	return false
 }
 
+// ErrSelectorNeedsContent reports a selector that reads cell contents used on a
+// run with no content. Callers that present usage errors can recognise it, so
+// the CLI can explain the fix instead of printing a bare failure.
+var ErrSelectorNeedsContent = errors.New("this selector reads cell contents, but the run has no content for it to read: it would select against the previous frame, which is blank on the first tick. Add a transition step such as reveal, or use a geometry selector such as inner or outer")
+
 // checkNeedsContent rejects a selector that reads cells on a run that has none
 // for it to read.
 //
@@ -159,7 +164,7 @@ func checkNeedsContent(s Selector, hasContent bool) error {
 	if s == nil || !s.NeedsContent() || hasContent {
 		return nil
 	}
-	return errors.New("this selector reads cell contents, but the run has no content for it to read: it would select against the previous frame, which is blank on the first tick. Add a transition step such as reveal, or use a geometry selector such as inner or outer")
+	return ErrSelectorNeedsContent
 }
 
 // Filter restricts which cells e may change. After e runs, every cell the
@@ -352,7 +357,7 @@ func parseSelectorList(s string) ([]Selector, string, error) {
 		}
 		rest, err = patternExpect(s, ')')
 		if err != nil {
-			return nil, "", fmt.Errorf("expected another selector or \")\"), got %q", truncate(s))
+			return nil, "", fmt.Errorf("expected another selector or `)`, got %q", truncate(s))
 		}
 		return kids, rest, nil
 	}

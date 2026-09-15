@@ -37,6 +37,10 @@ type step struct {
 	params map[string]string
 	// forSeconds gives a looping effect a duration so the chain can advance.
 	forSeconds float64
+	// filter is the raw --filter expression for this step, parsed in resolve so
+	// that errors carry the step number and a did-you-mean. sel is the result.
+	filter string
+	sel    fx.Selector
 }
 
 // chain collects the effect chain in command-line order. Index 0 is the
@@ -102,6 +106,15 @@ func (c *chain) setFor(s string) error {
 // limits so a seek cannot be made arbitrarily expensive from the CLI.
 const maxForDuration = time.Duration(maxSeconds) * time.Second
 
+func (c *chain) setFilter(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fmt.Errorf("--filter needs a selector, e.g. --filter 'not(ink)'")
+	}
+	c.steps[c.cur].filter = s
+	return nil
+}
+
 // flag Values. They share one chain so ordering across the flags is
 // meaningful.
 type chainParamValue struct{ c *chain }
@@ -125,11 +138,19 @@ func (v *chainForValue) Set(s string) error {
 	return v.c.setFor(s)
 }
 
+type chainFilterValue struct{ c *chain }
+
+func (v *chainFilterValue) String() string { return "" }
+func (v *chainFilterValue) Set(s string) error {
+	return v.c.setFilter(s)
+}
+
 func addRunFlags(fs *flag.FlagSet) *runFlags {
 	rf := &runFlags{chain: newChain()}
 	fs.Var(&chainParamValue{rf.chain}, "p", "effect param key=value (repeatable); applies to the effect named last")
 	fs.Var(&chainThenValue{rf.chain}, "then", "play another effect after the previous one (repeatable)")
 	fs.Var(&chainForValue{rf.chain}, "for", "give the effect named last a duration, e.g. 2s (required to chain a looping effect)")
+	fs.Var(&chainFilterValue{rf.chain}, "filter", "restrict which cells the effect named last may change, e.g. 'not(ink)'")
 	fs.StringVar(&rf.text, "text", "", `content text for transitions; "\n" starts a new line`)
 	fs.StringVar(&rf.banner, "banner", "", "content rendered as a banner font")
 	fs.StringVar(&rf.font, "font", "block", "banner font")
@@ -339,6 +360,18 @@ func (rf *runFlags) resolve(name string) (*fx.Spec, []*fx.Spec, error) {
 			return nil, nil, usageErr("give the effect name before any --then", "step %d has no effect", i+1)
 		}
 	}
+	// Parse selectors here rather than in the flag, so a bad one is reported
+	// with its step number and the same did-you-mean a pattern gets.
+	for i, st := range steps {
+		if st.filter == "" {
+			continue
+		}
+		sel, err := fx.ParseSelector(st.filter)
+		if err != nil {
+			return nil, nil, wrapStep(i, usageErr("selectors: "+fx.SelectorGrammar(), "%v", err))
+		}
+		steps[i].sel = sel
+	}
 	// Validate each step with the flag-aware checker, so errors carry the
 	// did-you-mean and range hints the library cannot know about.
 	specs := make([]*fx.Spec, len(steps))
@@ -357,7 +390,7 @@ func (rf *runFlags) resolve(name string) (*fx.Spec, []*fx.Spec, error) {
 	}
 	fxSteps := make([]fx.Step, len(steps))
 	for i, st := range steps {
-		fxSteps[i] = fx.Step{Name: st.name, Params: st.params, For: st.forSeconds}
+		fxSteps[i] = fx.Step{Name: st.name, Params: st.params, For: st.forSeconds, Filter: st.sel}
 	}
 	spec, err := fx.Compose(fxSteps...)
 	if err != nil {
@@ -400,6 +433,9 @@ func (rf *runFlags) build(e *env, name string) (*built, error) {
 			for k, v := range resolved.Map() {
 				reported[fmt.Sprintf("%d.%s", i+1, k)] = v
 			}
+			if st.filter != "" {
+				reported[fmt.Sprintf("%d.filter", i+1)] = st.filter
+			}
 		}
 	} else {
 		oParams = rf.chain.steps[0].params
@@ -408,6 +444,9 @@ func (rf *runFlags) build(e *env, name string) (*built, error) {
 			return nil, runtimeErr(err, "")
 		}
 		reported = resolved.Map()
+		if st := rf.chain.steps[0]; st.filter != "" {
+			reported["filter"] = st.filter
+		}
 	}
 	if (rf.w != 0) != (rf.h != 0) {
 		return nil, usageErr(fmt.Sprintf("default size for %s is --w %d --h %d", spec.Name, spec.DefW, spec.DefH), "--w and --h must be given together")
@@ -419,6 +458,9 @@ func (rf *runFlags) build(e *env, name string) (*built, error) {
 		return nil, usageErr("typical rates are 10-60", "--fps %d is too high", rf.fps)
 	}
 	o := fx.Options{Params: oParams, W: rf.w, H: rf.h, Seed: rf.seed, FPS: rf.fps}
+	if !rf.chain.chained() {
+		o.Filter = rf.chain.steps[0].sel
+	}
 	if spec.Content {
 		s, _, err := rf.content(e.stdin)
 		if err != nil {
@@ -445,6 +487,9 @@ func (rf *runFlags) build(e *env, name string) (*built, error) {
 	}
 	r, err := fx.NewRun(spec, o)
 	if err != nil {
+		if errors.Is(err, fx.ErrSelectorNeedsContent) {
+			return nil, usageErr("a filter that reads cell contents needs a transition in the run; add one with --then, or use a geometry selector such as inner or outer", "%v", err)
+		}
 		return nil, runtimeErr(err, fmt.Sprintf("see `asciifx info %s`", spec.Name))
 	}
 	return &built{spec: spec, run: r, seed: rf.seed, params: reported, steps: stepNames}, nil

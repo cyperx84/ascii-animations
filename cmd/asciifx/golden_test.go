@@ -54,6 +54,14 @@ var goldenCases = []goldenCase{
 	{name: "chain-mid", want: "███", args: []string{"render", "reveal", "--banner", "HI", "--w", "24", "--h", "8", "--frame", "30", "--format", "plain", "--seed", "1", "--then", "fire", "--for", "1s"}},
 	{name: "chain-final", want: "▀", args: []string{"render", "reveal", "--banner", "HI", "--w", "24", "--h", "8", "--frame", "-1", "--format", "plain", "--seed", "1", "--then", "fire", "--for", "1s"}},
 	{name: "chain-ansi-256", want: "38;5;", args: []string{"render", "reveal", "--banner", "HI", "--w", "20", "--h", "6", "--for", "500ms", "--then", "shine", "--for", "500ms", "--frame", "-1", "--format", "ansi", "--profile", "256", "--seed", "1"}},
+	// The flagship filter case: the same chain as chain-final, with fire
+	// restricted to not(ink). Unfiltered, fire eats the banner (chain-final
+	// shows half-blocks where the letters were); filtered, the letters survive
+	// and the flames burn in the gaps.
+	{name: "chain-filter-final", dense: true, want: "███", args: []string{"render", "reveal", "--banner", "HI", "--w", "24", "--h", "8", "--frame", "-1", "--format", "plain", "--seed", "1", "--then", "fire", "--for", "1s", "--filter", "not(ink)"}},
+	// A geometry filter on a single effect: the border glitches, the interior
+	// keeps the content.
+	{name: "glitch-outer-filter", want: "ACCESS", args: []string{"render", "glitch", "--text", "ACCESS", "--w", "24", "--h", "6", "--frame", "20", "--format", "plain", "--seed", "1", "--filter", "outer(1)"}},
 	{name: "check-bad-art", want: "exit 3", args: []string{"check", "-"}},
 }
 
