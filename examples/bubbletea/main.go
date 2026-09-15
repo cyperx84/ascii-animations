@@ -19,7 +19,7 @@ import (
 
 type model struct {
 	intro   teafx.Model
-	spinner teafx.Model
+	spinner teafx.Spinner
 	// spinning flips once the intro is done; the spinner starts ticking
 	// then, so it does no work while hidden.
 	spinning bool
@@ -38,10 +38,12 @@ func newModel() (model, error) {
 	if err != nil {
 		return model{}, err
 	}
-	spinner, err := teafx.New("spinner", fx.Options{
-		W: 32, H: 1,
-		Params: map[string]string{"style": "dots", "label": "Warming up the pixels", "palette": "synthwave"},
-	})
+	// The spinner is a drop-in for bubbles/spinner: same New/Update/View/Tick
+	// shape, 14 styles, and no trailing padding in View.
+	spinner, err := teafx.NewSpinner("dots",
+		teafx.WithLabel("Warming up the pixels"),
+		teafx.WithPalette("synthwave"),
+	)
 	if err != nil {
 		return model{}, err
 	}
@@ -63,7 +65,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 	if m.intro.Done() && !m.spinning {
 		m.spinning = true
-		cmds = append(cmds, m.spinner.Init())
+		cmds = append(cmds, m.spinner.Tick())
 	}
 	m.spinner, cmd = m.spinner.Update(msg)
 	cmds = append(cmds, cmd)
