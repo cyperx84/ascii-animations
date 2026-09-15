@@ -1,5 +1,46 @@
 # ASCII Animations
 
+Home of **asciifx**, a deterministic terminal animation toolkit built for humans and coding agents, plus the original interactive showcase TUI.
+
+## asciifx
+
+```sh
+go install github.com/cyperx84/ascii-animations/cmd/asciifx@latest
+
+asciifx list                                             # 18 effects: ambient, transitions, spinner
+asciifx play reveal --banner HELLO -p pattern=center     # animate in your terminal
+asciifx render fire --frame 45 --format luma             # see any frame as text
+asciifx check art.txt                                    # lint ASCII art for width problems
+asciifx catalog --out .                                  # catalog.json + llms.txt for agents
+```
+
+- **Effects:**
+  - Ambient: aurora, dna, donut, fire, matrix, pipes, plasma, rain, snow, starfield.
+  - Transitions: beams, decrypt, glitch, reveal, typewriter.
+  - Loops over content: rainbow, shine.
+  - A spinner with 14 styles.
+- **Beauty:** OKLab gradients over space and time, eased per-cell progress along spatial patterns, flash-and-settle colour envelopes, and half-block and braille sub-cell resolution.
+- **Agent-ready:**
+  - Every run is a pure function of (effect, params, size, seed, tick).
+  - `render` prints frames as plain text, a luma map or JSON with colour runs.
+  - Params are typed and validated, with "did you mean" hints.
+  - `llms.txt` and `catalog.json` describe the whole surface.
+  - `skill/SKILL.md` teaches the render → inspect → tune → embed loop.
+- **Terminal-safe:**
+  - Only single-width glyphs.
+  - Diffed frames wrapped in synchronized output (mode 2026).
+  - 256/16/no-colour fallbacks.
+  - A static frame for pipes, CI, `TERM=dumb` and `ASCIIFX_REDUCED_MOTION=1`.
+  - Terminal restored on exit, key press, SIGINT and panic.
+- **Embed it:**
+  - Go: `fx.NewRun` + `term.Play`.
+  - Bubble Tea v2: the `asciifx/teafx` component (see `examples/bubbletea`).
+  - Any other language: shell out to `asciifx play` / `cast` / `render`.
+
+Research behind the design: [docs/research.md](docs/research.md).
+
+## Showcase
+
 Interactive TUI showcase of terminal ASCII animations, effects, and text banners. Built with Go, Bubble Tea, and Lip Gloss.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)
