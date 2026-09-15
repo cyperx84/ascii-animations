@@ -6,11 +6,29 @@ import (
 )
 
 const runFlagsHelp = `Effect flags:
-  -p key=value        effect param (repeatable); see asciifx info <effect>
+  -p key=value        effect param (repeatable); applies to the effect named last
   --seed N            random seed (default 1); same seed, same frames
   --w N --h N         size in cells (default: effect default, grown to fit content)
   --fps N             tick rate (default: effect's recommended fps)
   --profile P         colour profile: truecolor, 256, 16, none (default: detected)
+  --dither D          ordered dither for 16/256 colour: bayer8 (default),
+                      bayer4, none. Stable per cell, so still frames do not
+                      shimmer. Ignored for truecolor and no-colour output.
+Chaining:
+  --then EFFECT       play another effect after the previous one (repeatable)
+  --for D             give the effect named last a duration, e.g. 2s. Required
+                      for an effect that loops, and it overrides a finite
+                      effect's own length.
+
+-p and --for apply to the effect named last, so flags read in the order they
+are written:
+
+  asciifx render reveal --text HI -p pattern=center \
+      --then shine --for 2s -p palette=matrix
+
+Content is shared: every transition in a chain transforms the same text, so a
+chain cannot change its subject part-way through. A chain of one effect is the
+plain single effect, flag for flag.
 Content (transitions only; default is the block banner "ASCIIFX"):
   --text "A\nB"       literal text, \n starts a new line
   --banner TEXT       text rendered in a banner font (--font block|slim|mini)
@@ -64,9 +82,11 @@ Formats:
                       like half-block fire stay readable as text
   ansi                styled output for --profile
   json                {"effect","tick","time","w","h","fps","seed","params",
-                      "frames_total","lines","luma","styles"}; styles holds,
-                      per row, runs {"x","len","fg","bg","attrs"} of coloured
-                      cells (unstyled runs omitted). Several frames => array.
+                      "steps","frames_total","lines","luma","styles"}; styles
+                      holds, per row, runs {"x","len","fg","bg","attrs"} of
+                      coloured cells (unstyled runs omitted). "steps" lists a
+                      chain's effects in order, and its params are keyed
+                      "<step>.<name>". Several frames => array.
 Several frames in text formats are separated by "--- frame N (t=0.40s)".
 
 ` + runFlagsHelp + `
@@ -74,6 +94,7 @@ Examples:
   asciifx render reveal --text "HELLO" --frame -1
   asciifx render reveal --banner HI --frames 0,12,-1 --format json
   asciifx render fire --at 2 --format luma --w 40 --h 10
+  asciifx render reveal --banner HI --then fire --for 1s --frame -1
   asciifx render reveal --every 10 | asciifx check -
 `,
 			run: cmdRender,
@@ -88,16 +109,22 @@ Examples:
   --limit D           stop after D (e.g. 5s); looping effects otherwise run
                       until q, Esc or Ctrl-C
   --hold D            keep a finished fullscreen effect on screen (default 1s)
+  --probe             ask the terminal whether it supports synchronized output
+                      (mode 2026) before the first frame. Costs at most 100ms
+                      and may consume input typed during that window, so it is
+                      off by default. ASCIIFX_SYNC always wins.
 
 Fullscreen play fits the terminal unless --w/--h are given. When stdout is
 not a terminal, CI is set, TERM=dumb or ASCIIFX_REDUCED_MOTION=1, a single
 static frame is printed instead. ASCIIFX_FORCE_ANIMATION=1 overrides that;
-ASCIIFX_COLOR and NO_COLOR control colour.
+ASCIIFX_COLOR and NO_COLOR control colour, and ASCIIFX_FPS caps the tick rate
+(30 locally, 15 over SSH, tmux or screen).
 
 ` + runFlagsHelp + `
 Examples:
   asciifx play fire --limit 5s
   asciifx play reveal --banner HELLO --inline -p palette=synthwave
+  asciifx play reveal --text HELLO --inline --then shine --for 3s
 `,
 			run: cmdPlay,
 		},

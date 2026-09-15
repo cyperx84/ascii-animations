@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/cyperx84/ascii-animations/asciifx/term"
+	"github.com/cyperx84/ascii-animations/asciifx/tint"
 )
 
 func cmdCast(e *env, args []string) error {
@@ -34,17 +35,28 @@ func cmdCast(e *env, args []string) error {
 			return usageErr("valid profiles: truecolor, 256, 16, none", "%v", err)
 		}
 	}
+	// A cast is a recording, so its default stays truecolour and independent
+	// of the terminal that produced it. Dithering follows the explicit
+	// profile, never the environment.
+	dither := term.DitherFor(profile, tint.Bayer8)
+	if rf.dither != "" {
+		d, derr := tint.ParseDither(rf.dither)
+		if derr != nil {
+			return usageErr("valid dithers: none, bayer4, bayer8", "%v", derr)
+		}
+		dither = term.DitherFor(profile, d)
+	}
 	b, err := rf.build(e, name)
 	if err != nil {
 		return err
 	}
-	return writeCast(e, b, profile, *seconds)
+	return writeCast(e, b, profile, dither, *seconds)
 }
 
 // writeCast emits asciicast v3: a header line, then [interval, "o", data]
 // events where interval is seconds since the previous event. Output is a
 // pure function of the run, so casts are reproducible.
-func writeCast(e *env, b *built, profile term.Profile, seconds float64) error {
+func writeCast(e *env, b *built, profile term.Profile, dither tint.Dither, seconds float64) error {
 	r := b.run
 	fps := r.FPS()
 	w, h := r.Size()
@@ -72,7 +84,7 @@ func writeCast(e *env, b *built, profile term.Profile, seconds float64) error {
 		out.Write(eb)
 		out.WriteByte('\n')
 	}
-	ren := &term.Renderer{Profile: profile}
+	ren := &term.Renderer{Profile: profile, Dither: dither}
 	prevTick := 0
 	for t := 0; t <= last; t++ {
 		buf, err := r.Seek(t)
