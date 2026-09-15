@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cyperx84/ascii-animations/asciifx/tint"
 	xterm "golang.org/x/term"
 )
 
@@ -40,7 +41,19 @@ func ParseProfile(s string) (Profile, error) {
 	return NoColor, fmt.Errorf("unknown colour profile %q: use none, 16, 256 or truecolor", s)
 }
 
+// DitherFor returns the ordered-dither pattern worth using at a profile.
+// Ordered dithering is only meaningful when the output is a palette; a
+// truecolour or colourless terminal has nothing to dither onto.
+func DitherFor(p Profile, d tint.Dither) tint.Dither {
+	if p == ANSI16 || p == ANSI256 {
+		return d
+	}
+	return tint.NoDither
+}
+
 // Caps is what the output terminal can do and whether animating is wanted.
+// Every field's zero value means "no restriction", so a caller that builds a
+// Caps literal gets the same behaviour as an animated truecolour terminal.
 type Caps struct {
 	Profile Profile
 	// TTY reports whether output is an interactive terminal.
@@ -49,11 +62,34 @@ type Caps struct {
 	Animate bool
 	// Reason explains why Animate is false, for logs and --json output.
 	Reason string
+	// NoSync disables synchronized output (mode 2026). Terminals ignore a
+	// mode they do not know, so this is only set when a probe got an explicit
+	// negative answer, or by ASCIIFX_SYNC=0.
+	NoSync bool
+	// SyncKnown is true when a probe got a definite answer about mode 2026,
+	// so a caller can tell "not supported" from "never asked".
+	SyncKnown bool
+	// FPS caps the tick rate. Nothing is capped when it is zero. Slower
+	// transports (SSH, tmux) get a lower cap because dropped frames look
+	// better than queued ones.
+	FPS int
+	// Dither stipples gradients when Profile is a palette. Zero is off.
+	Dither tint.Dither
+
+	// syncSet records that ASCIIFX_SYNC was given explicitly, so Probe cannot
+	// overwrite the user's answer.
+	syncSet bool
 }
 
 // Detect inspects the environment and output file. Every decision has an
 // override: ASCIIFX_COLOR sets the profile, ASCIIFX_REDUCED_MOTION=1 forces a
-// static frame, and ASCIIFX_FORCE_ANIMATION=1 animates even in CI or a pipe.
+// static frame, ASCIIFX_FORCE_ANIMATION=1 animates even in CI or a pipe,
+// ASCIIFX_SYNC=0 disables mode 2026, ASCIIFX_DITHER=none|bayer4|bayer8 and
+// ASCIIFX_FPS=N tune rendering.
+//
+// Detect never touches the terminal: it reads environment variables only, so
+// it is safe to call before deciding whether to animate. Use Probe to ask the
+// terminal itself for the things the environment cannot answer.
 func Detect(out *os.File) Caps {
 	return detect(out != nil && xterm.IsTerminal(int(out.Fd())), os.Getenv)
 }
@@ -72,7 +108,43 @@ func detect(tty bool, env func(string) string) Caps {
 	case set("CI"):
 		c.Animate, c.Reason = false, "CI environment"
 	}
+	if v := env("ASCIIFX_SYNC"); v != "" {
+		c.syncSet = true
+		c.NoSync = v == "0" || v == "false"
+	}
+	if v := env("ASCIIFX_FPS"); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 && n <= 240 {
+			c.FPS = n
+		}
+	} else if tty {
+		c.FPS = transportFPS(env)
+	}
+	d := tint.Bayer8
+	if v := env("ASCIIFX_DITHER"); v != "" {
+		if parsed, err := tint.ParseDither(v); err == nil {
+			d = parsed
+		}
+	}
+	if set("NO_COLOR") {
+		d = tint.NoDither
+	}
+	c.Dither = DitherFor(c.Profile, d)
 	return c
+}
+
+// transportFPS is the tick-rate cap for the link the terminal sits behind.
+// A multiplexer or a remote shell cannot keep up with 30 fps of smooth
+// updates, and tmux only passes mode 2026 through from 3.7.
+func transportFPS(env func(string) string) int {
+	if env("SSH_CONNECTION") != "" || env("SSH_TTY") != "" {
+		return 15
+	}
+	t := strings.ToLower(env("TERM"))
+	if strings.HasPrefix(t, "tmux") || strings.HasPrefix(t, "screen") {
+		return 15
+	}
+	return 30
 }
 
 func detectProfile(env func(string) string) Profile {
