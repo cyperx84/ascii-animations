@@ -19,17 +19,22 @@ func init() {
 		Kind:   fx.Spinner,
 		Tags:   []string{"loading", "progress", "cli", "inline"},
 		Glyphs: []string{"ascii", "box", "block", "braille"},
-		FPS:    30,
-		MinW:   1,
-		MinH:   1,
-		DefW:   30,
-		DefH:   1,
+		// 15 fps covers every frame set, the fastest being `bar` at 70ms
+		// (14.3 fps). A spinner is drawn inside someone else's view, and a TUI
+		// re-renders its whole screen on every tick, so the default is the
+		// cheapest rate that skips no frame — not the rate a moving highlight
+		// would want. Raise it with --fps when shimmer is on.
+		FPS:  15,
+		MinW: 1,
+		MinH: 1,
+		DefW: 30,
+		DefH: 1,
 		Params: []fx.Param{
 			fx.EnumParam("style", "dots", styles.Names(), "Spinner frame set."),
 			fx.StringParam("label", "Loading", "Text after the spinner; empty for the glyph alone."),
 			fx.FloatParam("speed", 1, 0.1, 10, "Frame rate multiplier."),
 			fx.PaletteParam("palette", "catppuccin", "Colours the glyph cycles through and the label shimmers with."),
-			fx.FloatParam("shimmer", 1.4, 0, 10, "Seconds for the label highlight to cross; 0 turns it off."),
+			fx.FloatParam("shimmer", 0, 0, 10, "Seconds for the label highlight to cross; 0 turns it off. The highlight moves one step per tick, so pair it with --fps 30."),
 			fx.ColorParamOf("label_color", "#a6adc8", "Resting label colour; none uses the terminal default."),
 		},
 		Example: `asciifx play spinner -p style=arc -p label="Compiling assets"`,

@@ -321,3 +321,63 @@ Three structural mismatches, each verified rather than assumed:
 - **`CellFilter`** (tachyonfx's cell-precise targeting) — still the largest unbuilt borrow. It changes
   what an effect *may* touch rather than adding surface, so it needs a decision about which selectors
   earn their keep before it is written.
+
+## 8. Addendum: review findings, and two claims that were not true
+
+A review from a second agent (read-only, against `fa290cc`) found five items. All were reproduced
+before being fixed; the reproductions are named here because two of them were claims this repository
+was making about itself rather than simple bugs.
+
+### Reproduced
+
+- **`pkg/ui/ui.go:128`.** `case "enter", " ":` was dead. `KeyPressMsg.String()` returns `"space"` —
+  ultraviolet refuses to stringify a bare space and falls back to the keystroke name — so the space
+  bar had silently stopped opening a category. Verified by printing the string for
+  `tea.KeyPressMsg{Code: tea.KeySpace}`.
+- **Banner text field.** Typing `é` and pressing backspace left `"\xc3"`, invalid UTF-8, because the
+  field took any rune a key produced while backspace removed one byte. Verified by driving the model
+  and checking `utf8.ValidString`.
+- **Duplicate tick chains.** `Tick()` twice from one state started two chains that both stayed live —
+  two advances counted, two follow-up commands returned — because `gen` only ever changed in
+  `Restart`. This is the same bug `bubbles/v2` fixes with a per-accepted-tick tag.
+- **A doc example that did not compile.** `cmd := sp.Tick` where `Tick() tea.Cmd`:
+  `cannot use sp.Tick (value of type func() tea.Cmd) as tea.Cmd`.
+- **The bigger claim.** "Replaces bubbles/spinner without changing the structure" was false:
+  `NewSpinner(style) (Spinner, error)` against upstream's `New(opts...) Model`, no
+  `Spinner{Frames, FPS}`, no `ID()`, and `Tick` returning a `Cmd` where upstream returns a `Msg`. The
+  package was bubbles-*shaped*, not a drop-in, and it shipped with that claim in its doc comment.
+
+### Fixed
+
+`asciifx/spinner` is now a faithful reimplementation of `bubbles/v2@v2.2.1/spinner`, read from the
+module source rather than from a summary of it, with the twelve predefined spinners copied frame for
+frame and the tag and ID filtering matching. The compatibility claim is checked by the compiler:
+`compat_test.go` is an external test package, so it can only use the exported surface, and every
+snippet in it is written the way upstream code is written.
+
+The `styles` table moved to a leaf package (`asciifx/spinner/styles`) that imports neither Bubble Tea
+nor Lip Gloss, so the headless CLI still links zero charm packages — `go list -deps ./cmd/asciifx`
+reports none — while the effect and the drop-in spinner share one source of truth. Moving it also
+caught a unit bug of mine: `Interval` became a `time.Duration` and the effect went on dividing
+seconds by nanoseconds, a factor of a billion. The golden frames failed, which is what they are for.
+
+The spinner effect's defaults became the cheap path: 15fps, which is the slowest rate that shows every
+frame set without skipping one (the fastest is `bar` at 70ms), and the label highlight off. A
+spinner is drawn inside a view that re-renders on every tick, so the rate is a cost the parent pays,
+and the highlight is the only part that wants more ticks. Both facts are pinned by tests in
+`asciifx/effects/spinner_test.go`, including the invariant that ties the rate to the fastest style.
+
+### Not fixed, deliberately
+
+Three minor items were left as they are, each because the alternative is worse:
+
+- **`uv.go` hardcodes `Width: 1`.** A `cell.Buffer` can hold a rune of any width, and `Blit` declares
+  every cell one column. Sanitising there would mean silently rewriting a caller's cell in the one
+  place that is supposed to be a straight conversion; the invariant belongs to the buffer, and
+  `FromUV` already substitutes `?` for anything unsafe on the way in.
+- **`Blit` writes blank cells, so a buffer is opaque over a canvas.** That is the right default for
+  an effect: it owns its rectangle, and a transparent blit would let stale content show through a
+  frame that is supposed to have cleared. It is documented rather than changed.
+- **Label width in the spinner.** The drop-in measures nothing, because upstream renders whatever
+  frames it is given; `Cell`-level width safety is the job of the `styles` table, which validates
+  every frame with `cell.Safe` at init.

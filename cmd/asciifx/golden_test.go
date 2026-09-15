@@ -45,7 +45,9 @@ var goldenCases = []goldenCase{
 	{name: "decrypt-plain", dense: true, args: []string{"render", "decrypt", "--text", "ACCESS GRANTED", "--w", "32", "--h", "6", "--frame", "40", "--format", "plain", "--seed", "1"}},
 	{name: "decrypt-final-plain", want: "ACCESS GRANTED", args: []string{"render", "decrypt", "--text", "ACCESS GRANTED", "--w", "32", "--h", "6", "--frame", "-1", "--format", "plain", "--seed", "1"}},
 	{name: "rainbow-plain", want: "HELLO", args: []string{"render", "rainbow", "--text", "HELLO", "--w", "24", "--h", "4", "--frame", "20", "--format", "plain", "--seed", "1"}},
-	{name: "spinner-plain", args: []string{"render", "spinner", "--w", "8", "--h", "2", "--frame", "12", "--format", "plain", "--seed", "1", "-p", "style=dots"}},
+	// A mid-cycle frame and a width that fits the whole label, so the golden
+	// pins the tick-to-frame mapping and the glyph-plus-label layout together.
+	{name: "spinner-plain", args: []string{"render", "spinner", "--w", "16", "--h", "1", "--frame", "7", "--format", "plain", "--seed", "1", "-p", "style=dots"}},
 	{name: "fire-ansi-256", want: "38;5;", args: []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "256", "--seed", "1"}},
 	{name: "fire-ansi-16", want: "\x1b[0;", args: []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "16", "--seed", "1"}},
 	{name: "reveal-pattern-combinator", want: "███", args: []string{"render", "reveal", "--banner", "HI", "--w", "24", "--h", "8", "--frame", "18", "--format", "plain", "--seed", "1", "-p", "pattern=min(invert(center),wave)"}},

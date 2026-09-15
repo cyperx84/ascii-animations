@@ -154,6 +154,10 @@ Shared flags: `-p key=value` (scoped to the effect named last), `--then`/`--for`
 `--seed`, `--w/--h`, `--fps`, `--profile`, `--dither`, and for transitions `--text`, `--banner`,
 `--font`, `--file`. `asciifx help <command>` has the details.
 
+The spinner effect's tick rate is 15 fps, the cheapest that shows every frame set without skipping
+one, because a spinner is drawn inside a view that re-renders on every tick. Its label highlight is
+opt-in (`-p shimmer=1.4`), since that is the only part that wants a faster rate.
+
 Terminal safety, because a broken terminal is worse than no animation:
 
 - Single-width glyphs only, in animated regions.

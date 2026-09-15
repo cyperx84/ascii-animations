@@ -137,10 +137,11 @@ s := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 Extras, all opt-in: `WithLabel`, `WithPalette`, `WithShimmer`, and this project's 14 single-width
 frame sets via `Named("dots")` or the package vars.
 
-Prefer this over `teafx.New("spinner", ...)`: the frame set is a value rather than a validated param,
-and it defaults to the cheap path. Use `teafx.New("spinner", ...)` only when you want the effect's
-own countdown on the CLI too — a TUI re-renders its whole view on every tick, so the effect's 30fps
-default costs more than a spinner needs.
+Prefer this over the spinner *effect*: the frame set is a value rather than a validated param, and the
+effect defaults to 15fps because it is drawn inside someone else's view — a TUI re-renders its whole
+screen on every tick, so the rate is a cost the parent pays. The effect's label highlight is opt-in
+(`-p shimmer=1.4`) for the same reason: it is the only part that wants more ticks, so it should not
+be what sets the default.
 
 **Cell-precise composition.** `Model` implements `uv.Drawable`, so `teafx.At(model, uv.Rect(x,y,w,h)`
 composes it into a lipgloss v2 `Canvas` at a rectangle, and `teafx.Content(screen, area)` seeds a
