@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cyperx84/ascii-animations/asciifx/cell"
 	"github.com/cyperx84/ascii-animations/asciifx/fx"
@@ -18,7 +19,7 @@ import (
 
 // runFlags are the flags shared by every command that builds a run.
 type runFlags struct {
-	params  paramFlag
+	chain   *chain
 	text    string
 	banner  string
 	font    string
@@ -27,11 +28,129 @@ type runFlags struct {
 	w, h    int
 	fps     int
 	profile string
+	dither  string
+}
+
+// step is one link in a chain: an effect plus the flags scoped to it.
+type step struct {
+	name   string
+	params map[string]string
+	// forSeconds gives a looping effect a duration so the chain can advance.
+	forSeconds float64
+	// filter is the raw --filter expression for this step, parsed in resolve so
+	// that errors carry the step number and a did-you-mean. sel is the result.
+	filter string
+	sel    fx.Selector
+}
+
+// chain collects the effect chain in command-line order. Index 0 is the
+// positional effect and each --then appends one. -p and --for apply to the
+// step declared most recently, so flags read in the order they are written:
+//
+//	asciifx render reveal -p pattern=center --then shine -p palette=aurora
+//
+// The flag package calls Set in command-line order, so tracking "the step
+// named last" is enough; no separate index syntax is needed.
+type chain struct {
+	steps []step
+	cur   int
+}
+
+func newChain() *chain {
+	return &chain{steps: []step{{params: map[string]string{}}}}
+}
+
+// chained reports whether any --then step was given, which is what decides
+// between the plain single-effect path and a composition.
+func (c *chain) chained() bool { return len(c.steps) > 1 }
+
+func (c *chain) add(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("--then needs an effect name, e.g. --then shine")
+	}
+	c.steps = append(c.steps, step{name: name, params: map[string]string{}})
+	c.cur = len(c.steps) - 1
+	return nil
+}
+
+func (c *chain) setParam(s string) error {
+	k, v, ok := strings.Cut(s, "=")
+	if !ok || strings.TrimSpace(k) == "" {
+		return fmt.Errorf("param %q must be key=value, e.g. -p palette=synthwave", s)
+	}
+	c.steps[c.cur].params[strings.TrimSpace(k)] = v
+	return nil
+}
+
+func (c *chain) setFor(s string) error {
+	s = strings.TrimSpace(s)
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		// A bare number is seconds, which is what people write.
+		if secs, ferr := strconv.ParseFloat(s, 64); ferr == nil {
+			d, err = time.Duration(secs*float64(time.Second)), nil
+		}
+	}
+	if err != nil || d <= 0 {
+		return fmt.Errorf("--for wants a positive duration such as 2s or 500ms, got %q", s)
+	}
+	if d > maxForDuration {
+		return fmt.Errorf("--for %s is longer than the %s limit", d, maxForDuration)
+	}
+	c.steps[c.cur].forSeconds = d.Seconds()
+	return nil
+}
+
+// maxForDuration bounds one step of a chain, matching the render and cast
+// limits so a seek cannot be made arbitrarily expensive from the CLI.
+const maxForDuration = time.Duration(maxSeconds) * time.Second
+
+func (c *chain) setFilter(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fmt.Errorf("--filter needs a selector, e.g. --filter 'not(ink)'")
+	}
+	c.steps[c.cur].filter = s
+	return nil
+}
+
+// flag Values. They share one chain so ordering across the flags is
+// meaningful.
+type chainParamValue struct{ c *chain }
+
+func (v *chainParamValue) String() string { return "" }
+func (v *chainParamValue) Set(s string) error {
+	return v.c.setParam(s)
+}
+
+type chainThenValue struct{ c *chain }
+
+func (v *chainThenValue) String() string { return "" }
+func (v *chainThenValue) Set(s string) error {
+	return v.c.add(s)
+}
+
+type chainForValue struct{ c *chain }
+
+func (v *chainForValue) String() string { return "" }
+func (v *chainForValue) Set(s string) error {
+	return v.c.setFor(s)
+}
+
+type chainFilterValue struct{ c *chain }
+
+func (v *chainFilterValue) String() string { return "" }
+func (v *chainFilterValue) Set(s string) error {
+	return v.c.setFilter(s)
 }
 
 func addRunFlags(fs *flag.FlagSet) *runFlags {
-	rf := &runFlags{params: paramFlag{}}
-	fs.Var(rf.params, "p", "effect param key=value (repeatable)")
+	rf := &runFlags{chain: newChain()}
+	fs.Var(&chainParamValue{rf.chain}, "p", "effect param key=value (repeatable); applies to the effect named last")
+	fs.Var(&chainThenValue{rf.chain}, "then", "play another effect after the previous one (repeatable)")
+	fs.Var(&chainForValue{rf.chain}, "for", "give the effect named last a duration, e.g. 2s (required to chain a looping effect)")
+	fs.Var(&chainFilterValue{rf.chain}, "filter", "restrict which cells the effect named last may change, e.g. 'not(ink)'")
 	fs.StringVar(&rf.text, "text", "", `content text for transitions; "\n" starts a new line`)
 	fs.StringVar(&rf.banner, "banner", "", "content rendered as a banner font")
 	fs.StringVar(&rf.font, "font", "block", "banner font")
@@ -41,19 +160,31 @@ func addRunFlags(fs *flag.FlagSet) *runFlags {
 	fs.IntVar(&rf.h, "h", 0, "height in cells")
 	fs.IntVar(&rf.fps, "fps", 0, "tick rate (default: effect's recommended fps)")
 	fs.StringVar(&rf.profile, "profile", "", "colour profile: truecolor, 256, 16, none (default: detected)")
+	fs.StringVar(&rf.dither, "dither", "", "ordered dither for 16/256 colour: bayer8 (default), bayer4, none")
 	return rf
 }
 
-// colorProfile resolves --profile, falling back to environment detection.
-func (rf *runFlags) colorProfile(out *os.File) (term.Profile, error) {
-	if rf.profile == "" {
-		return term.Detect(out).Profile, nil
+// colorPrefs resolves --profile and --dither together, because both default
+// from the same environment detection pass. Dithering is dropped for profiles
+// that have no palette to dither onto.
+func (rf *runFlags) colorPrefs(out *os.File) (term.Profile, tint.Dither, error) {
+	caps := term.Detect(out)
+	if rf.profile != "" {
+		p, err := term.ParseProfile(rf.profile)
+		if err != nil {
+			return 0, tint.NoDither, usageErr("valid profiles: truecolor, 256, 16, none", "%v", err)
+		}
+		caps.Profile = p
 	}
-	p, err := term.ParseProfile(rf.profile)
-	if err != nil {
-		return 0, usageErr("valid profiles: truecolor, 256, 16, none", "%v", err)
+	d := caps.Dither
+	if rf.dither != "" {
+		parsed, err := tint.ParseDither(rf.dither)
+		if err != nil {
+			return 0, tint.NoDither, usageErr("valid dithers: none, bayer4, bayer8", "%v", err)
+		}
+		d = parsed
 	}
-	return p, nil
+	return caps.Profile, term.DitherFor(caps.Profile, d), nil
 }
 
 // lookupSpec finds an effect with a did-you-mean hint.
@@ -210,17 +341,112 @@ type built struct {
 	spec *fx.Spec
 	run  *fx.Run
 	seed uint64
+	// params is the resolved parameter set to report. For a chain it is
+	// prefixed per step, because a chain has no single parameter set.
+	params map[string]string
+	// steps names the effect of each link, empty for a single effect.
+	steps []string
+}
+
+// resolve turns the positional effect plus every --then into the spec to run
+// and the per-step specs it was built from. With no --then the registered
+// spec is used unchanged, so a plain invocation behaves exactly as it always
+// has.
+func (rf *runFlags) resolve(name string) (*fx.Spec, []*fx.Spec, error) {
+	steps := rf.chain.steps
+	steps[0].name = name
+	for i, st := range steps {
+		if st.name == "" {
+			return nil, nil, usageErr("give the effect name before any --then", "step %d has no effect", i+1)
+		}
+	}
+	// Parse selectors here rather than in the flag, so a bad one is reported
+	// with its step number and the same did-you-mean a pattern gets.
+	for i, st := range steps {
+		if st.filter == "" {
+			continue
+		}
+		sel, err := fx.ParseSelector(st.filter)
+		if err != nil {
+			return nil, nil, wrapStep(i, usageErr("selectors: "+fx.SelectorGrammar(), "%v", err))
+		}
+		steps[i].sel = sel
+	}
+	// Validate each step with the flag-aware checker, so errors carry the
+	// did-you-mean and range hints the library cannot know about.
+	specs := make([]*fx.Spec, len(steps))
+	for i, st := range steps {
+		s, err := lookupSpec(st.name)
+		if err != nil {
+			return nil, nil, wrapStep(i, err)
+		}
+		specs[i] = s
+		if err := validateParams(s, st.params); err != nil {
+			return nil, nil, wrapStep(i, err)
+		}
+	}
+	if !rf.chain.chained() {
+		return specs[0], specs, nil
+	}
+	fxSteps := make([]fx.Step, len(steps))
+	for i, st := range steps {
+		fxSteps[i] = fx.Step{Name: st.name, Params: st.params, For: st.forSeconds, Filter: st.sel}
+	}
+	spec, err := fx.Compose(fxSteps...)
+	if err != nil {
+		return nil, nil, usageErr("a chain runs each effect in turn, so a looping effect needs --for, e.g. `--then fire --for 2s`", "%v", err)
+	}
+	return spec, specs, nil
+}
+
+// wrapStep names the failing step without losing the error's exit code.
+func wrapStep(i int, err error) error {
+	var ce *cliError
+	if errors.As(err, &ce) {
+		return &cliError{code: ce.code, msg: fmt.Sprintf("step %d: %s", i+1, ce.msg), hint: ce.hint}
+	}
+	return fmt.Errorf("step %d: %w", i+1, err)
 }
 
 // build validates everything and constructs the run. fit leaves the size to
 // the caller (play resizes to the terminal).
 func (rf *runFlags) build(e *env, name string) (*built, error) {
-	spec, err := lookupSpec(name)
+	spec, specs, err := rf.resolve(name)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateParams(spec, rf.params); err != nil {
-		return nil, err
+	// A chain has no single parameter set, so report each step's resolved
+	// params under its position and hand the engine none: the composed spec
+	// resolves its children from the step table, not from Run.Values. A single
+	// effect reports and passes its own params, unprefixed, exactly as before.
+	reported := map[string]string{}
+	var stepNames []string
+	oParams := map[string]string(nil)
+	if rf.chain.chained() {
+		stepNames = make([]string, len(rf.chain.steps))
+		for i, st := range rf.chain.steps {
+			stepNames[i] = st.name
+			resolved, err := specs[i].Resolve(st.params)
+			if err != nil {
+				return nil, runtimeErr(err, "")
+			}
+			for k, v := range resolved.Map() {
+				reported[fmt.Sprintf("%d.%s", i+1, k)] = v
+			}
+			if st.filter != "" {
+				reported[fmt.Sprintf("%d.filter", i+1)] = st.filter
+			}
+		}
+	} else {
+		oParams = rf.chain.steps[0].params
+		resolved, err := specs[0].Resolve(oParams)
+		if err != nil {
+			return nil, runtimeErr(err, "")
+		}
+		reported = resolved.Map()
+		if st := rf.chain.steps[0]; st.filter != "" {
+			reported["filter"] = st.filter
+		}
 	}
 	if (rf.w != 0) != (rf.h != 0) {
 		return nil, usageErr(fmt.Sprintf("default size for %s is --w %d --h %d", spec.Name, spec.DefW, spec.DefH), "--w and --h must be given together")
@@ -231,7 +457,10 @@ func (rf *runFlags) build(e *env, name string) (*built, error) {
 	if rf.fps > 240 {
 		return nil, usageErr("typical rates are 10-60", "--fps %d is too high", rf.fps)
 	}
-	o := fx.Options{Params: map[string]string(rf.params), W: rf.w, H: rf.h, Seed: rf.seed, FPS: rf.fps}
+	o := fx.Options{Params: oParams, W: rf.w, H: rf.h, Seed: rf.seed, FPS: rf.fps}
+	if !rf.chain.chained() {
+		o.Filter = rf.chain.steps[0].sel
+	}
 	if spec.Content {
 		s, _, err := rf.content(e.stdin)
 		if err != nil {
@@ -258,9 +487,12 @@ func (rf *runFlags) build(e *env, name string) (*built, error) {
 	}
 	r, err := fx.NewRun(spec, o)
 	if err != nil {
+		if errors.Is(err, fx.ErrSelectorNeedsContent) {
+			return nil, usageErr("a filter that reads cell contents needs a transition in the run; add one with --then, or use a geometry selector such as inner or outer", "%v", err)
+		}
 		return nil, runtimeErr(err, fmt.Sprintf("see `asciifx info %s`", spec.Name))
 	}
-	return &built{spec: spec, run: r, seed: rf.seed}, nil
+	return &built{spec: spec, run: r, seed: rf.seed, params: reported, steps: stepNames}, nil
 }
 
 func oneEffect(c *command, pos []string) (string, error) {

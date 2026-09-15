@@ -13,13 +13,14 @@ import (
 
 	_ "github.com/cyperx84/ascii-animations/asciifx/effects"
 	"github.com/cyperx84/ascii-animations/asciifx/fx"
+	"github.com/cyperx84/ascii-animations/asciifx/spinner"
 	"github.com/cyperx84/ascii-animations/asciifx/teafx"
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
 )
 
 type model struct {
 	intro   teafx.Model
-	spinner teafx.Model
+	spinner spinner.Model
 	// spinning flips once the intro is done; the spinner starts ticking
 	// then, so it does no work while hidden.
 	spinning bool
@@ -38,14 +39,14 @@ func newModel() (model, error) {
 	if err != nil {
 		return model{}, err
 	}
-	spinner, err := teafx.New("spinner", fx.Options{
-		W: 32, H: 1,
-		Params: map[string]string{"style": "dots", "label": "Warming up the pixels", "palette": "synthwave"},
-	})
-	if err != nil {
-		return model{}, err
-	}
-	return model{intro: intro, spinner: spinner}, nil
+	// The spinner package is a drop-in for charm.land/bubbles/v2/spinner, so
+	// this is the same call shape that package's users already write.
+	spin := spinner.New(
+		spinner.WithSpinner(spinner.Dots),
+		spinner.WithLabel("Warming up the pixels"),
+		spinner.WithPalette("synthwave"),
+	)
+	return model{intro: intro, spinner: spin}, nil
 }
 
 func (m model) Init() tea.Cmd { return m.intro.Init() }
@@ -63,7 +64,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 	if m.intro.Done() && !m.spinning {
 		m.spinning = true
-		cmds = append(cmds, m.spinner.Init())
+		cmds = append(cmds, m.spinner.Tick)
 	}
 	m.spinner, cmd = m.spinner.Update(msg)
 	cmds = append(cmds, cmd)

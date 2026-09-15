@@ -1,0 +1,6 @@
+# Golden frames are compared byte for byte, so git must never rewrite their
+# line endings on checkout. Marking them -text disables all EOL conversion.
+*.golden -text
+
+# Frame captures and recorded casts are also byte-exact.
+*.cast -text

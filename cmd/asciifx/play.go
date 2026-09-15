@@ -17,6 +17,7 @@ func cmdPlay(e *env, args []string) error {
 	loop := fs.Bool("loop", false, "restart finite effects")
 	limit := fs.Duration("limit", 0, "stop after this long, e.g. 5s")
 	hold := fs.Duration("hold", time.Second, "keep a finished fullscreen effect on screen")
+	probe := fs.Bool("probe", false, "ask the terminal whether it supports synchronized output (mode 2026) before playing")
 	pos, err := parse(e, c, fs, args)
 	if err != nil {
 		return err
@@ -29,10 +30,12 @@ func cmdPlay(e *env, args []string) error {
 		return usageErr("durations look like 500ms, 2s or 1m", "--limit and --hold must not be negative")
 	}
 	caps := term.Detect(os.Stdout)
-	if rf.profile != "" {
-		if caps.Profile, err = rf.colorProfile(os.Stdout); err != nil {
+	if rf.profile != "" || rf.dither != "" {
+		profile, dither, err := rf.colorPrefs(os.Stdout)
+		if err != nil {
 			return err
 		}
+		caps.Profile, caps.Dither = profile, dither
 	}
 	b, err := rf.build(e, name)
 	if err != nil {
@@ -46,6 +49,7 @@ func cmdPlay(e *env, args []string) error {
 		Limit:  *limit,
 		Loop:   *loop,
 		Hold:   *hold,
+		Probe:  *probe,
 	})
 	if errors.Is(err, term.ErrInterrupted) || errors.Is(err, context.Canceled) {
 		return nil

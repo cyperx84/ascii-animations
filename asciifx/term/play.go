@@ -31,7 +31,16 @@ type PlayOptions struct {
 	Loop bool
 	// Hold keeps a finished fullscreen effect on screen before exiting.
 	Hold time.Duration
+	// Probe asks the terminal whether it supports synchronized output
+	// (mode 2026) before the first frame, inside the raw-mode window Play
+	// already owns. It costs at most probeTimeout and can consume input typed
+	// during that window, so it is off by default. ASCIIFX_SYNC always wins.
+	Probe bool
 }
+
+// probeTimeout bounds the capability probe. A terminal answers DECRQM and DA1
+// within a few milliseconds; the rest is slack for a slow multiplexer.
+const probeTimeout = 100 * time.Millisecond
 
 // ErrInterrupted is returned when the user pressed q, Esc or Ctrl-C.
 var ErrInterrupted = errors.New("interrupted")
@@ -57,7 +66,7 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(o.Out, ANSI(b, o.Caps.Profile))
+		_, err = fmt.Fprintln(o.Out, ANSIWith(b, o.Caps.Profile, o.Caps.Dither))
 		return err
 	}
 
@@ -80,6 +89,11 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 	keys := make(chan struct{}, 1)
 	if raw, ok := makeRaw(); ok {
 		defer raw()
+		if o.Probe && !o.Caps.syncSet {
+			if got := probeRaw(os.Stdin, o.Out, probeTimeout); got.SyncKnown {
+				o.Caps.NoSync, o.Caps.SyncKnown = got.NoSync, true
+			}
+		}
 		// Stop the watcher and wait for it before raw mode is restored and
 		// Play returns, so no goroutine is left reading the host's stdin.
 		keysDone := watchKeys(ctx, int(os.Stdin.Fd()), keys)
@@ -89,8 +103,14 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 		}()
 	}
 
-	ren := &Renderer{Profile: o.Caps.Profile, Sync: true}
-	dt := time.Second / time.Duration(r.FPS())
+	ren := &Renderer{Profile: o.Caps.Profile, Sync: !o.Caps.NoSync, Dither: o.Caps.Dither}
+	fps := r.FPS()
+	if o.Caps.FPS > 0 {
+		// Tick semantics stay the run's; only the wall-clock rate changes, so
+		// a capped playback still shows exactly the same frames.
+		fps = min(fps, o.Caps.FPS)
+	}
+	dt := time.Second / time.Duration(fps)
 	ticker := time.NewTicker(dt)
 	defer ticker.Stop()
 	began := time.Now() // whole playback, for Limit

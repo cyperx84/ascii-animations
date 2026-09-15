@@ -90,22 +90,131 @@ func TestRestartDropsStaleTicksAndLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale := TickMsg{ID: m.ID()}
+	// Advance once so the model is on a tag a restart can supersede; a tag of 0
+	// is a wildcard and would be accepted whenever it arrived.
+	m, _ = m.Update(TickMsg{ID: m.ID()})
+	stale := TickMsg{ID: m.ID(), tag: m.tag}
 	m.Restart()
 	m, cmd := m.Update(stale)
 	if cmd != nil || m.Run().Tick() != 0 {
 		t.Fatal("stale tick from before Restart was applied")
 	}
-	fresh := TickMsg{ID: m.ID(), gen: m.gen}
+	// Drive the live chain by always presenting its current tag.
 	m.Loop = true
 	for i := 0; i < m.Run().Frames()+2; i++ {
-		m, cmd = m.Update(fresh)
+		m, cmd = m.Update(TickMsg{ID: m.ID(), tag: m.tag})
 		if cmd == nil {
 			t.Fatal("looping model stopped ticking")
 		}
 		if m.Done() {
 			t.Fatal("looping model reported done")
 		}
+	}
+}
+
+// TestDuplicateTicksDoNotDoubleTheRate is the bug this guards. Tick called
+// twice from the same state used to start two chains that both stayed live,
+// because the tag they carried never changed, so the effect advanced twice per
+// interval for as long as it ran.
+func TestDuplicateTicksDoNotDoubleTheRate(t *testing.T) {
+	m, err := New("reveal", fx.Options{
+		W: 8, H: 3, Seed: 1, Content: fx.Text("HI", tint.None),
+		Params: map[string]string{"duration": "0.4"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Two chains started from the same state, which is what a parent does when
+	// it returns Tick from Init and again from a restart path.
+	msg1, ok := m.Init()().(TickMsg)
+	if !ok {
+		t.Fatal("Init did not produce a TickMsg")
+	}
+	msg2, ok := m.Init()().(TickMsg)
+	if !ok {
+		t.Fatal("a second Tick did not produce a TickMsg")
+	}
+
+	m, cmdA := m.Update(msg1)
+	m, cmdB := m.Update(msg2)
+	if cmdA == nil || cmdB == nil {
+		t.Fatal("an accepted tick must schedule its follow-up")
+	}
+
+	// Both carried the same tag, so both were accepted; from here the two
+	// follow-ups carry different tags and the older chain is dead. That is the
+	// whole fix: one extra frame slips through, not a permanently doubled rate.
+	live := m.tag
+	stale := live - 1
+	if stale == 0 {
+		t.Fatalf("expected a superseded chain, tag is %d", live)
+	}
+
+	before := m.Run().Tick()
+	if got, cmd := m.Update(TickMsg{ID: m.ID(), tag: stale}); cmd != nil || got.Run().Tick() != before {
+		t.Fatal("the superseded chain is still live, so the rate stays doubled")
+	}
+	got, cmd := m.Update(TickMsg{ID: m.ID(), tag: live})
+	if cmd == nil {
+		t.Fatal("the live chain stopped ticking")
+	}
+	if advanced := got.Run().Tick() - before; advanced != 1 {
+		t.Fatalf("one live tick advanced %d frames, want 1", advanced)
+	}
+}
+
+// TestTickStampsTheCurrentTag goes through the real command path, so a bug in
+// tick itself — stamping a constant, or the wrong field — is caught. The
+// hand-built messages above cannot see that, because they choose their own tags.
+func TestTickStampsTheCurrentTag(t *testing.T) {
+	m, err := New("fire", fx.Options{W: 8, H: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two chains started from the same state.
+	c1, c2 := m.Init(), m.Init()
+	m, cmdA := m.Update(c1().(TickMsg))
+	m, cmdB := m.Update(c2().(TickMsg))
+	if cmdA == nil || cmdB == nil {
+		t.Fatal("an accepted tick must schedule its follow-up")
+	}
+
+	before := m.Run().Tick()
+	if _, cmd := m.Update(cmdA().(TickMsg)); cmd != nil {
+		t.Error("the superseded chain survived a real round trip, so the rate stays doubled")
+	}
+	got, cmd := m.Update(cmdB().(TickMsg))
+	if cmd == nil {
+		t.Fatal("the live chain stopped ticking")
+	}
+	if advanced := got.Run().Tick() - before; advanced != 1 {
+		t.Errorf("the live chain advanced %d frames, want 1", advanced)
+	}
+}
+
+// TestZeroTagIsAWildcard pins the affordance that makes hand-built messages
+// usable in tests and in code that routes ticks itself, and that Restart relies
+// on to supersede a live chain rather than deadlock it.
+func TestZeroTagIsAWildcard(t *testing.T) {
+	m, err := New("fire", fx.Options{W: 8, H: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 3; i++ {
+		var cmd tea.Cmd
+		m, cmd = m.Update(TickMsg{ID: m.ID()})
+		if cmd == nil {
+			t.Fatalf("tick %d was dropped", i)
+		}
+		if m.Run().Tick() != i {
+			t.Fatalf("after %d wildcard ticks the frame is %d", i, m.Run().Tick())
+		}
+	}
+	// A stale non-zero tag is still dropped even after wildcards.
+	before := m.Run().Tick()
+	if got, cmd := m.Update(TickMsg{ID: m.ID(), tag: m.tag - 1}); cmd != nil || got.Run().Tick() != before {
+		t.Fatal("a stale tag was accepted")
 	}
 }
 

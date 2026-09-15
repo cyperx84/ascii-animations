@@ -15,8 +15,8 @@ import (
 	"github.com/cyperx84/ascii-animations/pkg/splash"
 	"github.com/cyperx84/ascii-animations/pkg/theme"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Animation represents a single animation that can be previewed.
@@ -53,6 +53,10 @@ var speedLabels = []string{"0.25x", "0.5x", "1x", "2x", "4x"}
 
 const defaultSpeedIdx = 2 // 1x
 
+// maxBannerRunes bounds the custom banner text. It counts runes rather than
+// bytes so the limit is the same however wide the characters are.
+const maxBannerRunes = 20
+
 // Model is the top-level Bubble Tea model.
 type Model struct {
 	state      viewState
@@ -79,9 +83,9 @@ func NewModel() Model {
 	}
 }
 
-func (m Model) Init() tea.Cmd {
-	return tea.SetWindowTitle("ASCII Animations Showcase")
-}
+// Init starts with no command: the menu needs no ticks, and the window title
+// is a property of the View in Bubble Tea v2 rather than a command.
+func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -90,7 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		m.exportMsg = ""
 		return m.handleKey(msg)
 
@@ -101,7 +105,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateMenu:
 		return m.handleMenuKey(msg)
@@ -113,7 +117,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleMenuKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -125,7 +129,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.menuCursor < len(m.categories)-1 {
 			m.menuCursor++
 		}
-	case "enter", " ":
+	case "enter", "space":
 		m.state = stateAnimation
 		m.animCursor = 0
 		m.frame = 0
@@ -136,7 +140,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleAnimKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleAnimKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	cat := m.categories[m.menuCursor]
 	switch msg.String() {
 	case "q", "esc":
@@ -198,7 +202,7 @@ func (m Model) handleAnimKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleBannerInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleBannerInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -214,13 +218,19 @@ func (m Model) handleBannerInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.frame = 0
 		return m, m.tickCmd()
 	case "backspace":
-		if len(m.bannerText) > 0 {
-			m.bannerText = m.bannerText[:len(m.bannerText)-1]
+		// Slice runes, not bytes: a multi-byte rune removed by byte would leave
+		// an invalid UTF-8 prefix behind.
+		if r := []rune(m.bannerText); len(r) > 0 {
+			m.bannerText = string(r[:len(r)-1])
 		}
 	default:
-		ch := msg.String()
-		if len(ch) == 1 && len(m.bannerText) < 20 {
-			m.bannerText += ch
+		// Key.Text is the literal text a key produced, so this accepts shifted
+		// and pasted characters that String would spell out. Only runes some
+		// font can actually draw are accepted, because Render substitutes a
+		// blank for anything else: taking them would look like nothing
+		// happened while still putting the rune in the string.
+		if r := []rune(msg.Text); len(r) == 1 && banners.Renderable(r[0]) && len([]rune(m.bannerText)) < maxBannerRunes {
+			m.bannerText += string(r[0])
 		}
 	}
 	return m, nil
@@ -268,7 +278,20 @@ func (m Model) tickCmd() tea.Cmd {
 	})
 }
 
-func (m Model) View() string {
+// View returns the styled frame plus the screen mode it needs. Bubble Tea v2
+// moved the alternate screen, the mouse mode and the window title from program
+// options onto the View, so the model carries them itself.
+func (m Model) View() tea.View {
+	v := tea.NewView(m.body())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	v.WindowTitle = "ASCII Animations Showcase"
+	return v
+}
+
+// body is the frame without the v2 screen settings, so it can be tested and
+// composed on its own.
+func (m Model) body() string {
 	switch m.state {
 	case stateMenu:
 		return m.menuView()

@@ -14,7 +14,6 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
-	"sort"
 	"strings"
 
 	_ "github.com/cyperx84/ascii-animations/asciifx/effects"
@@ -207,31 +206,6 @@ func parse(e *env, c *command, fs *flag.FlagSet, args []string) ([]string, error
 		pos = append(pos, rest[0])
 		args = rest[1:]
 	}
-}
-
-// paramFlag collects repeatable -p key=value flags.
-type paramFlag map[string]string
-
-func (p paramFlag) String() string {
-	keys := make([]string, 0, len(p))
-	for k := range p {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = k + "=" + p[k]
-	}
-	return strings.Join(parts, ",")
-}
-
-func (p paramFlag) Set(s string) error {
-	k, v, ok := strings.Cut(s, "=")
-	if !ok || strings.TrimSpace(k) == "" {
-		return fmt.Errorf("param %q must be key=value, e.g. -p palette=synthwave", s)
-	}
-	p[strings.TrimSpace(k)] = v
-	return nil
 }
 
 // suggest returns the closest name within a small edit distance, or "".

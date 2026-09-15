@@ -1,0 +1,4 @@
+exit 3
+<stdin>:0:1:7: "😀" U+1F600: emoji width varies between terminals (2-6 cells); use single-width glyphs such as box, block or braille
+<stdin>:0:1:8: "\t" U+0009: tab renders as 1-8 columns depending on position; expand to spaces
+<stdin>:0:2:3: line is 2 columns wide, frame is 21 (pad lines to equal width so redraws overwrite every cell)

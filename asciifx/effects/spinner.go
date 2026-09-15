@@ -6,6 +6,7 @@ import (
 
 	"github.com/cyperx84/ascii-animations/asciifx/cell"
 	"github.com/cyperx84/ascii-animations/asciifx/fx"
+	"github.com/cyperx84/ascii-animations/asciifx/spinner/styles"
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
 )
 
@@ -18,17 +19,22 @@ func init() {
 		Kind:   fx.Spinner,
 		Tags:   []string{"loading", "progress", "cli", "inline"},
 		Glyphs: []string{"ascii", "box", "block", "braille"},
-		FPS:    30,
-		MinW:   1,
-		MinH:   1,
-		DefW:   30,
-		DefH:   1,
+		// 15 fps covers every frame set, the fastest being `bar` at 70ms
+		// (14.3 fps). A spinner is drawn inside someone else's view, and a TUI
+		// re-renders its whole screen on every tick, so the default is the
+		// cheapest rate that skips no frame — not the rate a moving highlight
+		// would want. Raise it with --fps when shimmer is on.
+		FPS:  15,
+		MinW: 1,
+		MinH: 1,
+		DefW: 30,
+		DefH: 1,
 		Params: []fx.Param{
-			fx.EnumParam("style", "dots", spinnerStyleNames(), "Spinner frame set."),
+			fx.EnumParam("style", "dots", styles.Names(), "Spinner frame set."),
 			fx.StringParam("label", "Loading", "Text after the spinner; empty for the glyph alone."),
 			fx.FloatParam("speed", 1, 0.1, 10, "Frame rate multiplier."),
 			fx.PaletteParam("palette", "catppuccin", "Colours the glyph cycles through and the label shimmers with."),
-			fx.FloatParam("shimmer", 1.4, 0, 10, "Seconds for the label highlight to cross; 0 turns it off."),
+			fx.FloatParam("shimmer", 0, 0, 10, "Seconds for the label highlight to cross; 0 turns it off. The highlight moves one step per tick, so pair it with --fps 30."),
 			fx.ColorParamOf("label_color", "#a6adc8", "Resting label colour; none uses the terminal default."),
 		},
 		Example: `asciifx play spinner -p style=arc -p label="Compiling assets"`,
@@ -37,7 +43,7 @@ func init() {
 }
 
 type spinner struct {
-	style      spinnerStyle
+	style      styles.Style
 	label      []rune
 	speed      float64
 	shimmer    float64
@@ -51,7 +57,7 @@ func newSpinner(p fx.Values, w, h int, rng *rand.Rand) (fx.Effect, error) {
 		label = safeRunes(l, "?")
 	}
 	return &spinner{
-		style:      spinnerStyles[p.String("style")],
+		style:      mustStyle(p.String("style")),
 		label:      label,
 		speed:      p.Float("speed"),
 		shimmer:    p.Float("shimmer"),
@@ -60,14 +66,24 @@ func newSpinner(p fx.Values, w, h int, rng *rand.Rand) (fx.Effect, error) {
 	}, nil
 }
 
+// mustStyle looks up a frame set. The enum param guarantees a valid name, so a
+// miss is a programming error, like an undeclared param read.
+func mustStyle(name string) styles.Style {
+	st, ok := styles.Lookup(name)
+	if !ok {
+		panic("asciifx: spinner has no style " + name)
+	}
+	return st
+}
+
 func (s *spinner) Step(f *fx.Frame) {
 	b := f.Buf
 	// Spinners do not get content copied in, so start clean every tick.
 	b.Clear()
 	y := (b.H - 1) / 2
 	t := f.T() * s.speed
-	frames := s.style.frames
-	frame := []rune(frames[int(t/s.style.interval)%len(frames)])
+	frames := s.style.Frames
+	frame := []rune(frames[int(t/s.style.Interval.Seconds())%len(frames)])
 	// The glyph drifts through the palette's bright half.
 	glyphColor := s.pal.Cyclic(f.T() * 0.25)
 	glyphColor = tint.Lerp(glyphColor, s.pal.At(1), 0.35)

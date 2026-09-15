@@ -15,18 +15,22 @@ import (
 
 // frameJSON is the machine-readable form of one rendered frame.
 type frameJSON struct {
-	Effect      string            `json:"effect"`
-	Tick        int               `json:"tick"`
-	Time        float64           `json:"time"`
-	W           int               `json:"w"`
-	H           int               `json:"h"`
-	FPS         int               `json:"fps"`
-	Seed        uint64            `json:"seed"`
-	Params      map[string]string `json:"params"`
-	FramesTotal int               `json:"frames_total"`
-	Lines       []string          `json:"lines"`
-	Luma        []string          `json:"luma"`
-	Styles      [][]styleRun      `json:"styles"`
+	Effect string            `json:"effect"`
+	Tick   int               `json:"tick"`
+	Time   float64           `json:"time"`
+	W      int               `json:"w"`
+	H      int               `json:"h"`
+	FPS    int               `json:"fps"`
+	Seed   uint64            `json:"seed"`
+	Params map[string]string `json:"params"`
+	// Steps names each link of a chain, in order. Omitted for a single effect,
+	// where Effect is the whole story. Params for a chain are prefixed with
+	// the 1-based step number, matching this list.
+	Steps       []string     `json:"steps,omitempty"`
+	FramesTotal int          `json:"frames_total"`
+	Lines       []string     `json:"lines"`
+	Luma        []string     `json:"luma"`
+	Styles      [][]styleRun `json:"styles"`
 }
 
 // styleRun is a horizontal run of cells sharing colours and attributes.
@@ -77,19 +81,22 @@ func cmdRender(e *env, args []string) error {
 	if selectors > 1 {
 		return usageErr("pick one of --frame, --frames, --every, --at", "frame selectors are mutually exclusive")
 	}
-	// Validate --profile for every format so a typo never passes silently;
-	// only ansi output uses the result.
-	profile, err := rf.colorProfile(os.Stdout)
+	// Validate --profile and --dither for every format so a typo never passes
+	// silently; only ansi output uses the result.
+	profile, dither, err := rf.colorPrefs(os.Stdout)
 	if err != nil {
 		return err
 	}
 	if *format != "ansi" {
-		profile = term.TrueColor
+		profile, dither = term.TrueColor, tint.NoDither
 	}
 	b, err := rf.build(e, name)
 	if err != nil {
 		return err
 	}
+	// A composition reports itself by the names of its steps, so every hint
+	// below describes what will actually be rendered.
+	name = b.spec.Name
 	r := b.run
 	total := r.Frames()
 	fps := r.FPS()
@@ -219,7 +226,7 @@ func cmdRender(e *env, args []string) error {
 		case "luma":
 			fmt.Fprint(w, term.Luma(buf))
 		case "ansi":
-			fmt.Fprint(w, term.ANSI(buf, profile))
+			fmt.Fprint(w, term.ANSIWith(buf, profile, dither))
 		}
 	}
 	if *format == "json" {
@@ -261,7 +268,8 @@ func frameToJSON(b *built, buf *cell.Buffer, tick int, secs float64) frameJSON {
 		H:           buf.H,
 		FPS:         b.run.FPS(),
 		Seed:        b.seed,
-		Params:      b.run.Values.Map(),
+		Params:      b.params,
+		Steps:       b.steps,
 		FramesTotal: b.run.Frames(),
 		Lines:       buf.Lines(),
 		Luma:        strings.Split(term.Luma(buf), "\n"),
