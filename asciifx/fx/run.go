@@ -44,6 +44,9 @@ func NewRun(spec *Spec, o Options) (*Run, error) {
 	if err := spec.checkSize(o.W, o.H); err != nil {
 		return nil, err
 	}
+	if err := checkNeedsContent(o.Filter, spec.Content); err != nil {
+		return nil, err
+	}
 	if o.FPS <= 0 {
 		o.FPS = spec.FPS
 	}

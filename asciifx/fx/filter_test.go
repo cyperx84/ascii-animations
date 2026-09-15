@@ -503,3 +503,207 @@ func TestFilterNilIsIdentity(t *testing.T) {
 		t.Fatal("Filter(e, nil) should return e itself, not a wrapper")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Chains
+// ---------------------------------------------------------------------------
+
+// TestStepFilterAppliesToThatStepOnly pins per-step scoping: a filter on the
+// second step must not touch the first.
+func TestStepFilterAppliesToThatStepOnly(t *testing.T) {
+	paintSpec("tfilter-first", 'A', false, 0.2)
+	paintSpec("tfilter-second", 'B', false, 0.2)
+	spec, err := Compose(
+		Step{Name: "tfilter-first"},
+		Step{Name: "tfilter-second", Filter: SelInner(1, 0)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewRun(spec, Options{Seed: 1, W: 4, H: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Step 1 runs for 0.2s = 6 ticks, unfiltered, so it paints every cell.
+	first, err := r.Seek(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := first.Plain(); got != "AAAA" {
+		t.Fatalf("the unfiltered step was filtered: %q", got)
+	}
+	// Step 2 is filtered to the two middle columns, so the edges stay as the
+	// first step left them.
+	second, err := r.Seek(20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := second.Plain(); got != "ABBA" {
+		t.Fatalf("the filtered step wrote outside its filter: %q", got)
+	}
+}
+
+// TestStepFilterNeedsChainContent is the guard. A content selector needs content
+// somewhere in the run, and the chain is what decides that — not the step.
+func TestStepFilterNeedsChainContent(t *testing.T) {
+	paintSpec("tfilter-amb", 'X', false, 0)
+	paintSpec("tfilter-trans", 'Y', true, 0.2)
+
+	// A content-reading selector with no content anywhere is refused, and the
+	// error names the step.
+	_, err := Compose(Step{Name: "tfilter-amb", For: 0.2, Filter: SelInk})
+	if err == nil {
+		t.Fatal("ink on a chain with no content should be refused")
+	}
+	if !strings.Contains(err.Error(), "tfilter-amb") || !strings.Contains(err.Error(), "step 1") {
+		t.Errorf("the error should name the step: %v", err)
+	}
+	if !strings.Contains(err.Error(), "inner") {
+		t.Errorf("the error should suggest a way out: %v", err)
+	}
+
+	// The same selector is fine once some step contributes content, which is
+	// the flagship case: the ambient step is filtered against the transition's
+	// target, not against its own output.
+	if _, err := Compose(
+		Step{Name: "tfilter-trans"},
+		Step{Name: "tfilter-amb", For: 0.2, Filter: SelInk},
+	); err != nil {
+		t.Fatalf("ink should be allowed when the chain has content: %v", err)
+	}
+
+	// A geometry selector never needs content.
+	if _, err := Compose(Step{Name: "tfilter-amb", For: 0.2, Filter: SelOuter(1, 1)}); err != nil {
+		t.Fatalf("a geometry selector should not need content: %v", err)
+	}
+}
+
+func TestNewRunRejectsAContentSelectorWithoutContent(t *testing.T) {
+	amb := &Spec{
+		Name: "tfilter-guard", Title: "guard", Kind: Ambient, Duration: 0,
+		FPS: 30, MinW: 1, MinH: 1, DefW: 4, DefH: 2,
+		New: func(Values, int, int, *rand.Rand) (Effect, error) { return foreverPaint{'G'}, nil },
+	}
+	Register(*amb)
+	if _, err := NewRun(amb, Options{Seed: 1, Filter: SelInk}); err == nil {
+		t.Fatal("ink on an ambient run should be refused")
+	} else if !strings.Contains(err.Error(), "no content") {
+		t.Errorf("the error should explain the problem: %v", err)
+	}
+	// Geometry, and no filter at all, are both fine.
+	if _, err := NewRun(amb, Options{Seed: 1, Filter: SelInner(1, 1)}); err != nil {
+		t.Errorf("a geometry selector should be allowed: %v", err)
+	}
+	if _, err := NewRun(amb, Options{Seed: 1}); err != nil {
+		t.Errorf("no filter should be allowed: %v", err)
+	}
+	// A content run accepts a content selector.
+	content := &Spec{
+		Name: "tfilter-guard-c", Title: "guardc", Kind: Transition, Content: true, Duration: 0.2,
+		FPS: 30, MinW: 1, MinH: 1, DefW: 4, DefH: 2,
+		New: func(Values, int, int, *rand.Rand) (Effect, error) { return paint{'C', 0.2}, nil },
+	}
+	Register(*content)
+	if _, err := NewRun(content, Options{Seed: 1, Filter: SelInk}); err != nil {
+		t.Errorf("ink on a content run should be allowed: %v", err)
+	}
+}
+
+// TestChainFilterKeepsThePictureAndTheFlames is the flagship case end to end, in
+// miniature: a transition's output survives an ambient step filtered to
+// not(ink), and the ambient effect keeps advancing behind it.
+//
+// It is the case the pre-step snapshot exists for. The ambient step is handed the
+// target content, so not(ink) means "leave the picture alone and draw in the
+// gaps". Two things would break it, and the test fails on both: if the snapshot
+// were taken after the step, the ambient output would count as ink and block
+// itself from the second tick on; and if the wrapper leaked its restored cells
+// back into the effect, the simulation would stop advancing.
+func TestChainFilterKeepsThePictureAndTheFlames(t *testing.T) {
+	// The picture: a content step that leaves its target untouched, so what it
+	// hands on is exactly the content.
+	picture := &Spec{
+		Name: "tfilter-picture", Title: "picture", Kind: Transition, Content: true, Duration: 0.1,
+		FPS: 30, MinW: 1, MinH: 1, DefW: 5, DefH: 1,
+		New: func(Values, int, int, *rand.Rand) (Effect, error) {
+			return StepFunc(func(*Frame) {}), nil
+		},
+	}
+	Register(*picture)
+	// The flames: stateful, filling every cell with a per-tick digit, so a
+	// frozen simulation reads as a gap that stops changing.
+	flames := &Spec{
+		Name: "tfilter-flames", Title: "flames", Kind: Ambient, Duration: 0,
+		FPS: 30, MinW: 1, MinH: 1, DefW: 5, DefH: 1,
+		New: func(Values, int, int, *rand.Rand) (Effect, error) { return &stepper{}, nil },
+	}
+	Register(*flames)
+
+	spec, err := Compose(
+		Step{Name: "tfilter-picture"},
+		Step{Name: "tfilter-flames", For: 0.5, Filter: SelNot(SelInk)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !spec.Content {
+		t.Fatal("the chain should have content from the picture step")
+	}
+	r, err := NewRun(spec, Options{
+		Seed: 1, W: 5, H: 1,
+		Content: func(b *cell.Buffer) { b.WriteString(0, 0, "AB", tint.None) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gaps := map[string]bool{}
+	for tick := 0; tick < 15; tick++ {
+		got := r.Next().Plain()
+		if got[:2] != "AB" {
+			t.Fatalf("tick %d lost the picture: %q", tick, got)
+		}
+		if got[2:] == "   " {
+			t.Fatalf("tick %d left the gaps blank: the ambient step did nothing", tick)
+		}
+		if got[2] != got[3] || got[3] != got[4] {
+			t.Fatalf("tick %d wrote a ragged gap: %q", tick, got)
+		}
+		gaps[got[2:]] = true
+	}
+	if len(gaps) < 4 {
+		t.Fatalf("the gaps showed only %d distinct values: the ambient effect is not advancing", len(gaps))
+	}
+}
+
+// TestFilterDoesNotChangeTimingOrSeeding pins that wrapping changes neither the
+// frame count nor the effect's own randomness.
+func TestFilterDoesNotChangeTimingOrSeeding(t *testing.T) {
+	seeded := &Spec{
+		Name: "tfilter-seed", Title: "seed", Kind: Ambient, Duration: 0.5,
+		FPS: 30, MinW: 1, MinH: 1, DefW: 4, DefH: 3,
+		New: func(_ Values, _, _ int, rng *rand.Rand) (Effect, error) {
+			return paint{rune('a' + rng.IntN(26)), 0.5}, nil
+		},
+	}
+	Register(*seeded)
+	plain, err := NewRun(seeded, Options{Seed: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered, err := NewRun(seeded, Options{Seed: 3, Filter: SelInner(0, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Frames() != filtered.Frames() {
+		t.Errorf("frames changed: %d then %d", plain.Frames(), filtered.Frames())
+	}
+	if plain.Duration() != filtered.Duration() {
+		t.Errorf("duration changed: %g then %g", plain.Duration(), filtered.Duration())
+	}
+	// The effect's own random glyph must be the same, since the wrapper draws
+	// no numbers of its own.
+	a, b := plain.Next(), filtered.Next()
+	if a.Plain() != b.Plain() {
+		t.Errorf("the same seed produced %q and %q", a.Plain(), b.Plain())
+	}
+}

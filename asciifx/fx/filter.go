@@ -1,6 +1,7 @@
 package fx
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -145,6 +146,20 @@ func anyNeedsContent(ss []Selector) bool {
 		}
 	}
 	return false
+}
+
+// checkNeedsContent rejects a selector that reads cells on a run that has none
+// for it to read.
+//
+// The failure it prevents is quiet rather than loud: a content-reading selector
+// on a run with no content is handed whatever the previous frame left there,
+// which is blanks on the first tick, so the effect would appear to do nothing
+// and then select against stale output. Both are worse than refusing to run.
+func checkNeedsContent(s Selector, hasContent bool) error {
+	if s == nil || !s.NeedsContent() || hasContent {
+		return nil
+	}
+	return errors.New("this selector reads cell contents, but the run has no content for it to read: it would select against the previous frame, which is blank on the first tick. Add a transition step such as reveal, or use a geometry selector such as inner or outer")
 }
 
 // Filter restricts which cells e may change. After e runs, every cell the

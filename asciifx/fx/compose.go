@@ -125,6 +125,10 @@ type Step struct {
 	// whose spec has no natural end, because a sequence can only advance past
 	// an effect that finishes. It is ignored for finite effects.
 	For float64
+	// Filter restricts which cells this step may change. It applies to this
+	// step alone: a chain does not propagate one step's filter to the others,
+	// because each step is asked for its own.
+	Filter Selector
 }
 
 // Compose builds a single finite effect that plays steps in order, each
@@ -173,7 +177,7 @@ func Compose(steps ...Step) (*Spec, error) {
 		if st.For > 0 {
 			dur = st.For
 		}
-		kids = append(kids, kid{spec: child, vals: vals, forDur: st.For})
+		kids = append(kids, kid{spec: child, vals: vals, forDur: st.For, sel: st.Filter})
 		names = append(names, child.Name)
 		for _, g := range child.Glyphs {
 			glyphs[g] = true
@@ -202,6 +206,14 @@ func Compose(steps ...Step) (*Spec, error) {
 	if spec.Content {
 		spec.Kind = Transition
 	}
+	// Checked after the loop, because the answer depends on the whole chain:
+	// `reveal --then fire --for 1s --filter not(ink)` is legitimate precisely
+	// because the reveal gives the run content for fire's selector to read.
+	for i, k := range kids {
+		if err := checkNeedsContent(k.sel, spec.Content); err != nil {
+			return nil, fmt.Errorf("step %d (%s): %w", i+1, k.spec.Name, err)
+		}
+	}
 	spec.New = func(_ Values, w, h int, rng *rand.Rand) (Effect, error) {
 		fin := make([]Finite, 0, len(kids))
 		for i, k := range kids {
@@ -209,6 +221,9 @@ func Compose(steps ...Step) (*Spec, error) {
 			if err != nil {
 				return nil, fmt.Errorf("step %d (%s): %w", i+1, k.spec.Name, err)
 			}
+			// Wrapped before the Finite check, so a filtered step is still
+			// recognised as finite and still gets its duration.
+			e = Filter(e, k.sel)
 			if f, ok := e.(Finite); ok && k.forDur <= 0 {
 				fin = append(fin, f)
 				continue
@@ -227,4 +242,5 @@ type kid struct {
 	spec   *Spec
 	vals   Values
 	forDur float64
+	sel    Selector
 }
