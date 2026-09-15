@@ -45,14 +45,14 @@ func TestRenderTruecolorAnimation(t *testing.T) {
 
 func TestHsvToRGB(t *testing.T) {
 	tests := []struct {
-		h, s, v    float64
-		r, g, b    int
+		h, s, v float64
+		r, g, b int
 	}{
-		{0, 1, 1, 255, 0, 0},       // red
-		{120, 1, 1, 0, 255, 0},     // green
-		{240, 1, 1, 0, 0, 255},     // blue
-		{0, 0, 0, 0, 0, 0},         // black
-		{0, 0, 1, 255, 255, 255},   // white
+		{0, 1, 1, 255, 0, 0},     // red
+		{120, 1, 1, 0, 255, 0},   // green
+		{240, 1, 1, 0, 0, 255},   // blue
+		{0, 0, 0, 0, 0, 0},       // black
+		{0, 0, 1, 255, 255, 255}, // white
 	}
 	for _, tt := range tests {
 		r, g, b := hsvToRGB(tt.h, tt.s, tt.v)

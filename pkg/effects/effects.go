@@ -513,7 +513,7 @@ func RenderPlasma(w, h, frame int) string {
 
 			v := math.Sin(fx + t)
 			v += math.Sin(fy + t*0.7)
-			v += math.Sin((fx+fy+t) * 0.5)
+			v += math.Sin((fx + fy + t) * 0.5)
 			v += math.Sin(math.Sqrt(fx*fx+fy*fy+1) + t*0.8)
 			v = (v + 4) / 8 // normalize to 0..1
 

@@ -6,9 +6,9 @@ import (
 
 func TestRenderMatrixDimensions(t *testing.T) {
 	tests := []struct {
-		name   string
-		w, h   int
-		empty  bool
+		name  string
+		w, h  int
+		empty bool
 	}{
 		{"zero", 0, 0, true},
 		{"too small", 1, 1, true},

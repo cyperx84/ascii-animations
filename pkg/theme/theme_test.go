@@ -26,7 +26,7 @@ func TestPaletteColors(t *testing.T) {
 func TestStylesRender(t *testing.T) {
 	// verify styles can render without panic
 	styles := []struct {
-		name  string
+		name   string
 		render string
 	}{
 		{"Title", Title.Render("test")},
