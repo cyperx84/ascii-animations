@@ -139,6 +139,45 @@ asciifx render reveal --text HI -p pattern=center --for 400ms \
     --then fire --for 1s --then shine --for 400ms --frame -1
 ```
 
+### Put an effect behind your content
+
+`--filter` restricts which cells an effect may change. Cells the selector rejects
+are left exactly as the effect found them, so the effect runs unchanged and its
+output is clipped — which is what lets fire burn *around* a banner instead of
+through it:
+
+```sh
+asciifx render reveal --banner HI --then fire --for 1s --filter 'not(ink)' --frame -1
+```
+
+```
+      █   █ █████                    unfiltered, fire eats the banner
+     ▄█   █   █
+▀  ▀▀██████▀  █▄▄▄▄  ▄▄▀             filtered, the letters survive
+▀▀▀▀▀▄█▀▀▀█▀▀▄██▀▀▀▀▀▀▀▀             and the flames burn in the gaps
+```
+
+| Selector | Selects |
+|---|---|
+| `ink` | cells with a visible glyph |
+| `not(A)` | the opposite of A |
+| `all(A,B,..)` / `any(A,B,..)` | every / at least one of them |
+| `inner(H[,V])` / `outer(H[,V])` | inside / outside a margin |
+| `fg(#rrggbb\|none)` | an exact foreground colour |
+
+```sh
+asciifx render glitch --text ACCESS --filter 'all(ink,inner(2,1))'   # animate text inside a frame
+```
+
+Two things worth knowing. A selector is asked about the cell **before** the effect
+runs, so a filter composes with an effect rather than fighting it, and an ambient
+effect keeps its own state — filtering fire hides flames without freezing them. And
+a filter that reads the cell (`ink`, `fg`, and anything built from them) needs
+content in the run, because on an ambient-only run it would select against the
+previous frame, which is blank on the first tick. The engine refuses that
+combination rather than rendering something confusing; `inner` and `outer` are
+always fine.
+
 ## Commands
 
 | Command | What it does |

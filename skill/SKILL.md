@@ -89,6 +89,22 @@ transition in a chain transforms the same text, so a chain cannot change its sub
 part-way through. `render --format json` reports a chain as `"steps": ["reveal","fire"]`
 with params keyed `"1.pattern"`, `"2.palette"`.
 
+### Confine an effect with --filter
+
+`--filter EXPR` restricts which cells the effect named last may change; rejected cells are
+left as it found them, so the effect runs unchanged and is clipped. The case it exists for
+is an ambient effect that would otherwise destroy your content:
+
+```sh
+asciifx render reveal --banner HI --then fire --for 1s --filter 'not(ink)' --frame -1
+asciifx render glitch --text ACCESS --filter 'all(ink,inner(2,1))'
+```
+
+`ink` (visible glyph), `not(A)`, `all(A,B,..)`, `any(A,B,..)`, `inner(H[,V])`, `outer(H[,V])`,
+`fg(#rrggbb|none)`. Selectors see the cell *before* the effect runs, so filtering fire hides
+flames without freezing them. `ink` and `fg` read the cell, so they need content somewhere in
+the run — use them on a chain with a transition, or use `inner`/`outer`, which never need it.
+
 ### Dither, don't guess
 
 In the 16- and 256-colour profiles, gradients are quantised with ordered (Bayer)

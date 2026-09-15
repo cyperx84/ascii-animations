@@ -22,29 +22,34 @@ type catalogJSON struct {
 	Patterns []string            `json:"patterns"`
 	// PatternSyntax is the grammar for pattern expressions, which go beyond
 	// the bare names in Patterns: combinators nest arbitrarily.
-	PatternSyntax string            `json:"pattern_syntax"`
-	Dithers       []string          `json:"dithers"`
-	Directions    []string          `json:"directions"`
-	BannerFonts   []string          `json:"banner_fonts"`
-	ExitCodes     map[string]string `json:"exit_codes"`
+	PatternSyntax string   `json:"pattern_syntax"`
+	Selectors     []string `json:"selectors"`
+	// SelectorSyntax is the grammar --filter accepts.
+	SelectorSyntax string            `json:"selector_syntax"`
+	Dithers        []string          `json:"dithers"`
+	Directions     []string          `json:"directions"`
+	BannerFonts    []string          `json:"banner_fonts"`
+	ExitCodes      map[string]string `json:"exit_codes"`
 }
 
 const installCmd = "go install github.com/cyperx84/ascii-animations/cmd/asciifx@latest"
 
 func buildCatalog() catalogJSON {
 	c := catalogJSON{
-		Name:          "asciifx",
-		Version:       versionString(),
-		Install:       installCmd,
-		Effects:       []specInfo{},
-		Palettes:      map[string][]string{},
-		Easings:       ease.Names(),
-		Patterns:      fx.PatternNames(),
-		PatternSyntax: fx.PatternGrammar(),
-		Dithers:       tint.DitherNames(),
-		Directions:    tint.Directions,
-		BannerFonts:   bannerFonts(),
-		ExitCodes:     map[string]string{"0": "ok", "1": "runtime error", "2": "usage error (unknown effect, param or flag)", "3": "check found problems"},
+		Name:           "asciifx",
+		Version:        versionString(),
+		Install:        installCmd,
+		Effects:        []specInfo{},
+		Palettes:       map[string][]string{},
+		Easings:        ease.Names(),
+		Patterns:       fx.PatternNames(),
+		PatternSyntax:  fx.PatternGrammar(),
+		Selectors:      fx.SelectorNames(),
+		SelectorSyntax: fx.SelectorGrammar(),
+		Dithers:        tint.DitherNames(),
+		Directions:     tint.Directions,
+		BannerFonts:    bannerFonts(),
+		ExitCodes:      map[string]string{"0": "ok", "1": "runtime error", "2": "usage error (unknown effect, param or flag)", "3": "check found problems"},
 	}
 	for _, s := range fx.All() {
 		frames := 0
@@ -122,6 +127,7 @@ func llmsTxt(cat catalogJSON) string {
 	p("## Palettes\n\n%s. Any palette param also takes hex stops: `-p palette=\"#ff0000,#0000ff\"`.\n\n", strings.Join(tint.PaletteNames(), ", "))
 	p("## Patterns\n\n%s\n\nA pattern is a spatial ordering in [0,1] deciding where an effect starts and ends. Params taking a pattern accept an expression: %s. For example `-p pattern=\"min(invert(center),wave)\"`.\n\n", strings.Join(cat.Patterns, ", "), cat.PatternSyntax)
 	p("## Dithers\n\n%s. `--dither` stipples gradients in the 16- and 256-colour profiles; it is ordered per cell, so still frames never shimmer.\n\n", strings.Join(cat.Dithers, ", "))
+	p("## Selectors\n\n%s. `--filter EXPR` restricts which cells the effect named last may change, e.g. `--filter 'not(ink)'` to burn an ambient effect around a banner instead of through it. Selectors: %s. A selector that reads the cell (ink, fg, and anything built from them) needs content in the run, so it is rejected on an ambient-only invocation.\n\n", cat.SelectorSyntax, strings.Join(cat.Selectors, ", "))
 	p("## Easings\n\n%s\n\n", strings.Join(cat.Easings, ", "))
 	if len(cat.BannerFonts) > 0 {
 		p("## Banner fonts\n\n%s\n\n", strings.Join(cat.BannerFonts, ", "))

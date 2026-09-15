@@ -244,10 +244,10 @@ func (f *filteredFinite) Step(fr *Frame) { f.filterEffect.Step(fr) }
 
 func (f *filteredFinite) Duration() float64 { return f.fin.Duration() }
 
-// SelectorNames lists the built-in selector spellings, sorted, for help and for
-// the catalog.
+// SelectorNames lists the selector names, sorted, for help and for the catalog.
+// The arguments each takes are in SelectorGrammar.
 func SelectorNames() []string {
-	out := []string{"ink", "fg(...)", "inner(...)", "outer(...)", "not(...)", "all(...)", "any(...)"}
+	out := []string{"all", "any", "fg", "ink", "inner", "not", "outer"}
 	sort.Strings(out)
 	return out
 }

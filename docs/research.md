@@ -208,6 +208,7 @@ breadcrumb trail, so a later reader can tell a deliberate borrow from an acciden
 | Transport-aware frame-rate cap (30 local, 15 SSH/tmux/screen) | research §3 rule | `asciifx/term/caps.go` `transportFPS`, `ASCIIFX_FPS` |
 | Golden frames at fixed ticks with a forced profile, marked `-text` | research §3 rule | `cmd/asciifx/golden_test.go`, `cmd/asciifx/testdata/*.golden`, `.gitattributes` |
 | Pattern grammar exposed to agents | research §5 "machine-readable registry" | `fx.PatternGrammar`, `catalog.json.pattern_syntax` |
+| Cell selectors, and a wrapper that confines an effect to the cells a selector accepts | tachyonfx `CellFilter` (`src/cell_filter/filter.rs:83-359`), its pre-write evaluation (`cell_iter.rs:150-159`) and its Static/Dynamic split (`analyzer.rs:54-88`) | `fx/filter.go`, `Options.Filter`, `Step.Filter`, `--filter` |
 | Composition reachable from the CLI: a chain of effects with per-step params | tachyonfx `sequence` + method chains; the existing `fx.Sequence` was dead code from the CLI's side | `fx.Compose`, `fx.Timed`, `--then`, `--for`, scoped `-p` |
 | Per-step seed derivation, so appending a link does not invalidate earlier frames | tachyonfx's stateless effects make this automatic; here effects capture a seed at construction | `Compose`'s `New`, tested by `TestComposeAppendingAStepKeepsEarlierFrames` |
 
@@ -381,3 +382,74 @@ Three minor items were left as they are, each because the alternative is worse:
 - **Label width in the spinner.** The drop-in measures nothing, because upstream renders whatever
   frames it is given; `Cell`-level width safety is the job of the `styles` table, which validates
   every frame with `cell.Safe` at init.
+
+## 9. CellFilter: what was taken, and what a probe decided
+
+Read from tachyonfx v0.25.2 (`src/cell_filter/filter.rs`, `predicate.rs`, `analyzer.rs`,
+`processor.rs`, `cell_iter.rs`) rather than from documentation. Fifteen variants there; seven
+selectors here, chosen by measured usage in tachyonfx's own examples and docs: `FgColor` (5 example
+uses), `Text` (1 example, 4 docs, 8 src), `Inner` (1/1/3), then `Outer`, `AllOf`, `Not` (0/1-2/2-3).
+Zero example uses for `Area`, `RefArea`, `BgColor`, `NonEmpty`, `AnyOf`, `NoneOf`, `Layout`,
+`PositionFn`, `EvalCell` and `Static`.
+
+### Taken
+
+- **The wrapper, not a mask threaded into effects.** tachyonfx attaches a filter per shader through
+  `Shader::cell_iter`, which means every effect must honour it: `sleep.rs:29` drops it and
+  `glitch.rs:190` keeps its own selection instead. That works there because effects are ~40 lines
+  each. Here, twenty hand-rolled `Step` loops and every `Buf.Set` would have to change, and every
+  effect added later would have to remember. A wrapper touches no effect, so none can forget it, and
+  unfiltered output is byte-identical because `Filter(e, nil)` returns `e`.
+- **Evaluation against the cell before the effect writes it** (`cell_iter.rs:154`). This is what makes
+  a rejected cell exactly the pre-step cell, and it is what makes the flagship case work at all.
+- **The `NonEmpty` semantics**, under the name `ink`. tachyonfx's `Text` is *not* "non-empty":
+  `predicate.rs:90-93` accepts alphabetic, numeric, punctuation **and spaces**, and rejects box
+  drawing and block glyphs. On a banner that would select nearly the whole blank field and none of
+  the blocks, which is the opposite of useful. `NonEmpty` (new in this release, `CHANGELOG.md:17`)
+  is the one worth having, and `ink` is this package's existing name for it.
+- **Geometry resolved against the whole area**, with the acknowledgement that asciifx has no
+  sub-areas, so `inner`/`outer` are relative to the buffer.
+- **A per-step filter with no chain-level propagation.** tachyonfx has to arbitrate because
+  `sequence`/`parallel` push a filter into children that may keep their own (`containers.rs:110-113`,
+  `effect.rs:473`). When each step names its own, there is nothing to arbitrate.
+
+### Changed
+
+- **`Dynamic()` is called `NeedsContent()`.** tachyonfx's split drives a BitVec cache: static filters
+  are precomputed per area, dynamic ones evaluated per cell. This package deliberately does no such
+  caching — `Resize` and `teafx` can hand new content at any time, so a cached mask would be a bug
+  waiting to happen — which leaves the split doing exactly one job: deciding whether the run must
+  have content. The name says what it is for instead of implying an optimization that is not there.
+- **`ink`, not `text`**, for the reason above. `selFoo`/`FooOf` naming, because `fx.Ink` and `fx.All`
+  already exist.
+
+### Decided by a probe, not by reading
+
+The research left one question open, and getting it wrong would have inverted the feature: in
+`reveal --then fire --for 1s --filter not(ink)`, what is in the buffer when fire's `Step` runs?
+
+Measured, with a probe effect that records what it is handed:
+
+- **A content chain refills from the target every tick.** Every frame of every step was handed the
+  content (`"HI    "`), never the previous step's output. `Compose` sets `Content` for the whole chain
+  (`compose.go:187`) and `Next` copies whenever it is set (`run.go:87-90`), so fire receives the
+  banner, `not(ink)` keeps the letters and burns in the gaps, and fire's heat buffer advances
+  regardless because it is internal state.
+- **An ambient-only chain does not refill.** Frames came out blank, then the previous step's
+  leftovers (`"CCCC"`, then `"DDDD"`). So a content-reading selector there would read the previous
+  frame — blank at tick 0, stale afterwards. Both are worse than refusing to run, which is what the
+  engine now does, and why the guard is keyed on the run rather than on the step's kind.
+
+The flagship test is built to fail on both failure modes: if the snapshot moved after the step, the
+ambient output would count as ink and block itself from the second tick; if restored cells leaked back
+into the effect, the simulation would freeze in the gaps.
+
+### Not taken
+
+- **`Area`, `RefArea`, `Layout`** — the first two need sub-areas this engine does not have, and
+  `Layout` is ratatui-specific.
+- **`BgColor`, `NoneOf`** — no measured usage; `not(any(...))` covers `NoneOf`.
+- **`PositionFn`, `EvalCell`** — `SelFunc` covers both.
+- **`Static`** — a caching hint, and there is no cache to hint at.
+- **A `Selector` on the effect's own constructor** — the filter is a run-level concern, so it lives in
+  `Options` and `Step`, and `Resize` rebuilds it for free.

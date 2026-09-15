@@ -179,15 +179,39 @@ func TestParseSelectorErrors(t *testing.T) {
 	}
 }
 
-func TestSelectorNamesAndGrammarAreConsistent(t *testing.T) {
-	// Every name the help lists must actually parse, or the help is lying.
-	for _, name := range []string{"ink", "fg(#ff0000)", "inner(1)", "outer(1)", "not(ink)", "all(ink)", "any(ink)"} {
-		if _, err := ParseSelector(name); err != nil {
-			t.Errorf("SelectorNames lists %q but it does not parse: %v", name, err)
+// TestSelectorNamesAreRecognised keeps the published name list and the parser
+// from drifting. A name in the list must be recognised by the parser — either it
+// parses bare, like ink, or its error says it takes arguments rather than saying
+// it is unknown — and the grammar must mention it, because that is what a caller
+// reads to find out how to spell it.
+func TestSelectorNamesAreRecognised(t *testing.T) {
+	names := SelectorNames()
+	if len(names) == 0 {
+		t.Fatal("SelectorNames is empty, so nothing publishes the selector set")
+	}
+	for _, name := range names {
+		_, err := ParseSelector(name)
+		if err == nil {
+			continue // a bare name like ink
+		}
+		if strings.Contains(err.Error(), "unknown selector") {
+			t.Errorf("SelectorNames lists %q but the parser does not recognise it: %v", name, err)
+		}
+		if !strings.Contains(err.Error(), "takes arguments") {
+			t.Errorf("SelectorNames lists %q but the parser rejects it oddly: %v", name, err)
 		}
 	}
-	if SelectorGrammar() == "" || len(SelectorNames()) == 0 {
-		t.Fatal("the grammar and names must be published for help and the catalog")
+	grammar := SelectorGrammar()
+	for _, name := range names {
+		if !strings.Contains(grammar, name) {
+			t.Errorf("the grammar %q does not mention %q", grammar, name)
+		}
+	}
+	// Every example spelling in the grammar must actually parse.
+	for _, expr := range []string{"ink", "fg(#ff0000)", "inner(1)", "inner(2,1)", "outer(1)", "not(ink)", "all(ink)", "any(ink)"} {
+		if _, err := ParseSelector(expr); err != nil {
+			t.Errorf("the grammar advertises %q but it does not parse: %v", expr, err)
+		}
 	}
 }
 
