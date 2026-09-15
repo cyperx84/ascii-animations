@@ -169,3 +169,49 @@ func TestRenderFrameCapsBeforeAllocating(t *testing.T) {
 		t.Fatalf("huge --every on finite effect: exit %d\n%s", code, out)
 	}
 }
+
+func TestRenderReviewRegressions(t *testing.T) {
+	usage := []struct {
+		name  string
+		stdin string
+		args  []string
+		want  string
+	}{
+		{"emoji in --text", "", []string{"render", "reveal", "--text", "hi \U0001F525", "--json"}, "U+1F525"},
+		{"wide rune in --text", "", []string{"render", "reveal", "--text", "漢", "--json"}, "asciifx check"},
+		{"emoji via --file -", "ok\n★\n", []string{"render", "decrypt", "--file", "-", "--json"}, "line 2 col 1"},
+		{"bad profile with plain", "", []string{"render", "reveal", "--profile", "bogus", "--json"}, "valid profiles"},
+		{"bad profile with luma", "", []string{"render", "reveal", "--profile", "bogus", "--format", "luma", "--json"}, "valid profiles"},
+		{"--every 0", "", []string{"render", "fire", "--every", "0", "--json"}, "step of 1 or more"},
+		{"--every 0 conflicts like any selector", "", []string{"render", "fire", "--every", "0", "--frame", "1", "--json"}, "mutually exclusive"},
+		{"out of range echoes typed index", "", []string{"render", "reveal", "--frames", "0,-1,-100", "--json"}, "frame -100 out of range"},
+	}
+	for _, c := range usage {
+		code, out, _ := runCLI(t, c.stdin, c.args...)
+		if code != exitUsage || !strings.Contains(out, c.want) {
+			t.Errorf("%s: exit %d, want 2 with %q in:\n%s", c.name, code, c.want, out)
+		}
+	}
+
+	// play shares the content check; it has no --json, so the error is on stderr.
+	if code, _, errs := runCLI(t, "", "play", "reveal", "--text", "\u00b7"); code != exitUsage || !strings.Contains(errs, "not single-width") {
+		t.Errorf("play with unsafe content: exit %d, stderr %q", code, errs)
+	}
+
+	ok := []struct {
+		name  string
+		stdin string
+		args  []string
+		want  string
+	}{
+		{"tabs and CRLF content still render", "A\tB\r\nC\r\n", []string{"render", "reveal", "--file", "-", "--frame", "-1"}, "C"},
+		{"valid profile with plain", "", []string{"render", "reveal", "--text", "OK", "--profile", "16", "--frame", "-1"}, "OK"},
+		{"--every 1", "", []string{"render", "reveal", "--text", "OK", "--w", "4", "--h", "1", "--every", "1"}, "--- frame 48"},
+	}
+	for _, c := range ok {
+		code, out, errs := runCLI(t, c.stdin, c.args...)
+		if code != 0 || !strings.Contains(out, c.want) {
+			t.Errorf("%s: exit %d, want 0 with %q\nstdout:\n%s\nstderr:\n%s", c.name, code, c.want, out, errs)
+		}
+	}
+}

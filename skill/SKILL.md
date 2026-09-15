@@ -64,24 +64,49 @@ It flags emoji, wide/ambiguous runes, tabs, ragged line widths and frames of dif
 **Go, standalone** (handles alt screen, frame pacing, resize, static fallback and terminal restore on Ctrl-C and panic):
 
 ```go
+package main
+
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 
-	_ "github.com/cyperx84/ascii-animations/asciifx/effects"
+	_ "github.com/cyperx84/ascii-animations/asciifx/effects" // registers every effect
 	"github.com/cyperx84/ascii-animations/asciifx/fx"
 	"github.com/cyperx84/ascii-animations/asciifx/term"
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
 )
 
-banner, _ := fx.Banner("ACME", "block")
-spec, _ := fx.Lookup("reveal")
-run, _ := fx.NewRun(spec, fx.Options{
-	W: 60, H: 9, Seed: 1,
-	Params:  map[string]string{"pattern": "center", "palette": "synthwave"},
-	Content: fx.Text(banner, tint.None),
-})
-_ = term.Play(context.Background(), run, term.PlayOptions{Caps: term.Detect(os.Stdout), Inline: true})
+func main() {
+	if err := intro(); err != nil {
+		fmt.Fprintln(os.Stderr, "intro:", err) // an intro must never block the real program
+	}
+}
+
+func intro() error {
+	banner, err := fx.Banner("ACME", "block")
+	if err != nil {
+		return err
+	}
+	spec, err := fx.Lookup("reveal")
+	if err != nil {
+		return err
+	}
+	run, err := fx.NewRun(spec, fx.Options{
+		W: 60, H: 9, Seed: 1,
+		Params:  map[string]string{"pattern": "center", "palette": "synthwave"},
+		Content: fx.Text(banner, tint.None),
+	})
+	if err != nil {
+		return err // unknown or invalid params are reported here
+	}
+	err = term.Play(context.Background(), run, term.PlayOptions{Caps: term.Detect(os.Stdout), Inline: true})
+	if errors.Is(err, term.ErrInterrupted) {
+		return nil // the user skipped the intro
+	}
+	return err
+}
 ```
 
 **Bubble Tea v2**: `asciifx/teafx` is a component. `teafx.New("spinner", fx.Options{...})`, call its `Init`/`Update`/`View` from your model, and check `Done()` to move on from an intro. See `examples/bubbletea`.

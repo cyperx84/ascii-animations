@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"math"
 	"os"
@@ -65,8 +66,10 @@ func cmdRender(e *env, args []string) error {
 	default:
 		return usageErr("formats: plain, luma, ansi, json", "unknown format %q", *format)
 	}
+	everySet := false
+	fs.Visit(func(f *flag.Flag) { everySet = everySet || f.Name == "every" })
 	selectors := 0
-	for _, set := range []bool{*frameS != "", *framesS != "", *every != 0, *atS != ""} {
+	for _, set := range []bool{*frameS != "", *framesS != "", everySet, *atS != ""} {
 		if set {
 			selectors++
 		}
@@ -74,11 +77,14 @@ func cmdRender(e *env, args []string) error {
 	if selectors > 1 {
 		return usageErr("pick one of --frame, --frames, --every, --at", "frame selectors are mutually exclusive")
 	}
-	profile := term.TrueColor
-	if *format == "ansi" {
-		if profile, err = rf.colorProfile(os.Stdout); err != nil {
-			return err
-		}
+	// Validate --profile for every format so a typo never passes silently;
+	// only ansi output uses the result.
+	profile, err := rf.colorProfile(os.Stdout)
+	if err != nil {
+		return err
+	}
+	if *format != "ansi" {
+		profile = term.TrueColor
 	}
 	b, err := rf.build(e, name)
 	if err != nil {
@@ -93,15 +99,17 @@ func cmdRender(e *env, args []string) error {
 		}
 		return fmt.Sprintf("%s has %d frames (0..%d, or -1 for the last) at %d fps", name, total, total-1, fps)
 	}
-	resolve := func(n int) (int, error) {
+	resolve := func(asked int) (int, error) {
+		n := asked
 		if n < 0 {
 			if total == 0 {
-				return 0, usageErr(rangeHint(), "negative frame %d needs a finite effect", n)
+				return 0, usageErr(rangeHint(), "negative frame %d needs a finite effect", asked)
 			}
 			n += total
 		}
 		if n < 0 || (total > 0 && n >= total) {
-			return 0, usageErr(rangeHint(), "frame %d out of range", n)
+			// Report the index as typed, not after counting from the end.
+			return 0, usageErr(rangeHint(), "frame %d out of range", asked)
 		}
 		if total == 0 && n > maxTick(fps) {
 			return 0, usageErr(fmt.Sprintf("looping effects render at most %gs (tick %d at %d fps); frames are deterministic, so a later tick shows nothing new", maxSeconds, maxTick(fps), fps), "frame %d too far", n)
@@ -136,9 +144,9 @@ func cmdRender(e *env, args []string) error {
 			}
 			ticks = append(ticks, t)
 		}
-	case *every != 0:
-		if *every < 0 {
-			return usageErr("--every takes a positive step", "bad --every %d", *every)
+	case everySet:
+		if *every < 1 {
+			return usageErr("--every takes a step of 1 or more, e.g. --every 5", "bad --every %d", *every)
 		}
 		last := total - 1
 		if total == 0 {

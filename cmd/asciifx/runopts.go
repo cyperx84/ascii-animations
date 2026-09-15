@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cyperx84/ascii-animations/asciifx/cell"
 	"github.com/cyperx84/ascii-animations/asciifx/fx"
 	"github.com/cyperx84/ascii-animations/asciifx/term"
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
@@ -175,6 +176,26 @@ func (rf *runFlags) content(stdin io.Reader) (string, bool, error) {
 	return s, false, nil
 }
 
+// checkContent rejects runes that are not single-width instead of letting
+// fx.Text quietly draw them as '?'. Tabs are fine: fx.Text expands them.
+func checkContent(s string) error {
+	for i, line := range strings.Split(s, "\n") {
+		col := 0
+		for _, r := range line {
+			col++
+			if r == '\t' {
+				continue
+			}
+			if cell.Width(r) != 1 {
+				return usageErr(
+					"content must use single-width glyphs (ASCII, box, block, braille); run `asciifx check` on the text to list every problem",
+					"content line %d col %d: %q (U+%04X) is not single-width", i+1, col, r, r)
+			}
+		}
+	}
+	return nil
+}
+
 func textSize(s string) (w, h int) {
 	s = strings.TrimRight(strings.ReplaceAll(s, "\t", "    "), "\n")
 	lines := strings.Split(s, "\n")
@@ -214,6 +235,10 @@ func (rf *runFlags) build(e *env, name string) (*built, error) {
 	if spec.Content {
 		s, _, err := rf.content(e.stdin)
 		if err != nil {
+			return nil, err
+		}
+		s = strings.ReplaceAll(s, "\r\n", "\n")
+		if err := checkContent(s); err != nil {
 			return nil, err
 		}
 		o.Content = fx.Text(s, tint.None)
