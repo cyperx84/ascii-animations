@@ -19,6 +19,9 @@ type Options struct {
 	FPS int
 	// Content is the target for transitions. Ignored by ambient effects.
 	Content Content
+	// Filter restricts which cells the effect may change. Cells it rejects are
+	// restored to what they were before the effect ran. Nil means no filter.
+	Filter Selector
 }
 
 // Run drives one effect deterministically. It is the single place that
@@ -74,7 +77,9 @@ func (r *Run) build(w, h int) error {
 		r.opts.Content(target)
 	}
 	r.opts.W, r.opts.H = w, h
-	r.effect = e
+	// The filter wraps the effect, so no effect has to know it exists and none
+	// can forget to honour it.
+	r.effect = Filter(e, r.opts.Filter)
 	r.frame = Frame{Buf: cell.New(w, h), Tick: -1, Dt: 1 / float64(r.opts.FPS), Rand: rng}
 	r.target = target
 	return nil
