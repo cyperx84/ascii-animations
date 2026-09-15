@@ -7,9 +7,17 @@ description: Add beautiful, terminal-safe ASCII animations to CLI and TUI progra
 
 asciifx is a deterministic terminal animation engine plus a CLI built for agents. You cannot watch motion, so the workflow is: **pick an effect, render frames as text, inspect, tune params, embed**.
 
+Two parts of it are worth reaching for even when nothing animates:
+
+- `asciifx check` lints ASCII art for width problems. Run it on any art you write or generate, before committing it.
+- `asciifx render --format luma` turns a colour-only effect into a brightness map you can read.
+
 Install: `go install github.com/cyperx84/ascii-animations/cmd/asciifx@latest`
 
 ## 1. Decide whether to animate at all
+
+Reach for an effect only when it earns its place. Most of the catalogue — fire, plasma, aurora — is
+for screensavers and CLI intros, not for a dashboard, where it would own the whole screen.
 
 | Situation | Use | Budget |
 |---|---|---|
@@ -100,7 +108,40 @@ asciifx check --json spinners.json # cli-spinners {interval, frames} shape also 
 
 It flags emoji, wide/ambiguous runes, tabs, ragged line widths and frames of differing size.
 
-## 5. Embed
+## 5. In a TUI
+
+An effect is a widget. `Model.View()` returns a styled string, so it goes into any
+lipgloss v2 layout with no second renderer:
+
+```go
+m, err := teafx.New("fire", fx.Options{W: 26, H: 8, Seed: 1})
+frame := lipgloss.NewCompositor(
+    lipgloss.NewLayer(title).X(0).Y(0),
+    lipgloss.NewLayer(m.View()).X(1).Y(1),
+).Render()
+```
+
+Do **not** mix a string `Layer` onto a lipgloss `Canvas` alongside `teafx.At(...)`: a Layer fills the
+whole area it is given, so composing one wipes the drawables beneath it. Use layers and a Compositor
+for a layout, or a Canvas of drawables, not both.
+
+**Spinners.** `teafx.NewSpinner` is a drop-in for `bubbles/spinner` — same `New`, `Update`, `View`,
+`Tick` shape, 14 styles — and `View` emits no padding, so measure it with `Width()`:
+
+```go
+sp, err := teafx.NewSpinner("dots2", teafx.WithLabel("Compiling"))
+// Init: return sp.Tick. Update: m.sp, cmd = m.sp.Update(msg) for every message.
+```
+
+Prefer this over `teafx.New("spinner", ...)`: the style is named, so a typo fails at startup with the
+valid names instead of silently spinning the wrong glyphs.
+
+**Cell-precise composition.** `Model` implements `uv.Drawable`, so `teafx.At(model, uv.Rect(x,y,w,h)`
+composes it into a lipgloss v2 `Canvas` at a rectangle, and `teafx.Content(screen, area)` seeds a
+transition with content that is already on screen. That is how you animate a panel you have already
+drawn instead of replacing it.
+
+## 6. Embed
 
 **Go, standalone** (handles alt screen, frame pacing, resize, static fallback and terminal restore on Ctrl-C and panic):
 

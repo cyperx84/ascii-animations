@@ -256,3 +256,68 @@ dithering along the segment between the two nearest entries is what recovers it.
   registered, so the registry keeps describing effects and the shell composes them. A
   registered composition would need a name and a file format, which is the DSL this repo
   has already declined.
+
+## 7. Addendum: the TUI integration round
+
+Second pass, same day. The first pass deepened the engine; this one answers the question the engine
+depth did not: *can a TUI builder actually use this?* Much of the answer was no, and that is recorded
+here because it is the more useful finding.
+
+### What was wrong
+
+Three structural mismatches, each verified rather than assumed:
+
+1. **Two Bubble Tea stacks.** `cmd/showcase` and `pkg/ui` were on `github.com/charmbracelet/bubbletea`
+   v1.3.10 with Lip Gloss v1, while `asciifx/teafx` was on `charm.land/bubbletea/v2` v2.0.9. Both were
+   direct dependencies. The only TUI integration point served v2, so the repository's own TUI could
+   not use it.
+2. **Ten of eighteen effects own the whole buffer** (`asciifx list --json`: 10 ambient, 7 transitions
+   and content loops, 1 spinner). A TUI has a dashboard in that screen, so the ambient catalogue is
+   for screensavers and CLI intros, not for a status line. The category a TUI actually needs —
+   a spinner — was one effect, competing with `bubbles/spinner`, which is forty lines and already in
+   every go.mod in the ecosystem.
+3. **The rendering core duplicated Lip Gloss v2.** Verified by fetching the module: `charm.land/lipgloss/v2`
+   v2.0.6 ships `Blend1D` and `Blend2D` (CIELAB), `NewCanvas` over `uv.Cell` with `SetCell`/`CellAt`/
+   `Render`, `NewCompositor` and `Layer`. That is the same job as `asciifx/tint` plus
+   `asciifx/cell.Buffer`, and it is what a Charm user already has installed. So the dithering work in
+   §6 improves a gradient pipeline most TUI builders would never adopt, because they have one.
+
+### What was done about it
+
+| Change | Why |
+|---|---|
+| Migrated `cmd/showcase`, `pkg/ui` and `pkg/theme` to Bubble Tea v2 and Lip Gloss v2 | One stack, and the repository can now demonstrate its own integration path. The v1 modules are gone from `go.mod`. |
+| `teafx` uv bridge: `ToUV`, `FromUV`, `UV`, `At`, `Blit`, `Snapshot`, `Content`, `Model.Draw` | A `cell.Buffer` and a `uv.Cell` are near-isomorphic, so eighteen effects become widgets in the stack the user already has, with one conversion instead of a second renderer. |
+| `teafx.NewSpinner`, `SpinnerStyles`, `SetLabel`, `SetStyle`, `WithFPS` | A drop-in for `bubbles/spinner` with the same call shape, so migration is a find-replace. |
+| `pkg/ui` tests, `examples/lipgloss`, README led by `check` and the agent loop | The winnable audience is CLI intros, agent-authored art and the linter — not dashboards. |
+
+### Things learned the hard way, and now documented
+
+- **`Canvas.Compose` hands every drawable the whole canvas**, so a widget meant for one region needs
+  `teafx.At` to say where it belongs. Measured directly: composing a buffer draws at the canvas
+  origin, and two unpinned composes overwrite each other.
+- **A string `Layer` fills the entire area it is given.** `Layer.Draw` is
+  `uv.NewStyledString(content).Draw(scr, area)` and `Compose` passes the canvas bounds, so composing
+  a Layer wipes every drawable composed before it. Measured: inked cells went 148 → 4. The correct
+  pattern for mixing an effect with styled text is a `Compositor` of layers, with the effect rendered
+  to a string. `At` and Canvas are for a canvas whose widgets are all drawables.
+- **`uv.Cell.Content` is a grapheme cluster.** Decoding only its first rune turned "e" plus a
+  combining acute into a bare "e" — a different character — so a multi-rune cluster now becomes `?`,
+  the same substitution `cell.Buffer.WriteString` makes.
+- **Bubble Tea v2 already probes mode 2026/2027 with DECRQM**, and skips the probe for Apple Terminal
+  and SSH (`shouldQuerySynchronizedOutput` in `tea.go`). Independent corroboration of the §6 decision
+  to make asciifx's own probe opt-in with an override.
+- **A pty with no terminal emulator cannot exercise a Bubble Tea v2 program**: nothing answers the
+  capability probe, so the program reads the test's own keystrokes as the reply. The showcase is
+  verified by driving the model directly in `pkg/ui/ui_test.go`, and by running the binary in a pty
+  with `TERM_PROGRAM=Apple_Terminal` (which suppresses the probe) and a pty size set with `stty`.
+
+### Still declined
+
+- **Moving the uv bridge out of `teafx`.** A Lip Gloss-only user who wants it would pull Bubble Tea v2
+  transitively. Accepted because the bridge's main consumers are `Model.Draw` and a canvas inside a
+  Bubble Tea program, and the dependency-free path (`Model.View()` into a Layer) already exists and is
+  the one the README leads with.
+- **`CellFilter`** (tachyonfx's cell-precise targeting) — still the largest unbuilt borrow. It changes
+  what an effect *may* touch rather than adding surface, so it needs a decision about which selectors
+  earn their keep before it is written.
