@@ -456,8 +456,8 @@ func (rf *runFlags) build(e *env, name string) (*built, error) {
 	if rf.w < 0 || rf.h < 0 || rf.fps < 0 {
 		return nil, usageErr("sizes and fps must be positive", "negative --w, --h or --fps")
 	}
-	if rf.fps > 240 {
-		return nil, usageErr("typical rates are 10-60", "--fps %d is too high", rf.fps)
+	if rf.fps > term.MaxFPS {
+		return nil, usageErr(fmt.Sprintf("typical rates are 10-60; the ceiling is %d", term.MaxFPS), "--fps %d is too high", rf.fps)
 	}
 	o := fx.Options{Params: oParams, W: rf.w, H: rf.h, Seed: rf.seed, FPS: rf.fps}
 	if !rf.chain.chained() {

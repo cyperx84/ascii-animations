@@ -250,3 +250,51 @@ func TestExplicitProfileIgnoresNoColor(t *testing.T) {
 		t.Fatal("--dither none had no effect under NO_COLOR")
 	}
 }
+
+// TestPlayCapsFPSPrecedence pins what playCaps does with --fps: a positive
+// one replaces Caps.FPS outright, whatever put a value there.
+//
+// out is os.DevNull, so Detect reports no terminal and the transport cap never
+// runs -- every non-zero starting value here comes from ASCIIFX_FPS. That is
+// enough, because playCaps does not care where Caps.FPS came from. Where a
+// transport cap comes from is term.TestDetectTransportAndRenderingPrefs, which
+// calls detect with tty=true; what Play then does with a cap is
+// term.TestPlayFPS. Asserting resolved state rather than counting frames
+// against a clock keeps all three deterministic.
+func TestPlayCapsFPSPrecedence(t *testing.T) {
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devnull.Close()
+
+	for _, c := range []struct {
+		name string
+		env  string
+		fps  int
+		want int
+	}{
+		{"nothing asked for", "", 0, 0},
+		{"ASCIIFX_FPS alone", "60", 0, 60},
+		{"--fps alone", "", 24, 24},
+		{"--fps outranks ASCIIFX_FPS downwards", "60", 24, 24},
+		{"--fps outranks ASCIIFX_FPS upwards", "15", 90, 90},
+		{"an unusable ASCIIFX_FPS is not a rate", "abc", 0, 0},
+		{"...nor does it block --fps", "abc", 24, 24},
+		{"a partially parsed ASCIIFX_FPS is not a rate", "60fps", 0, 0},
+		{"zero ASCIIFX_FPS is not a rate", "0", 0, 0},
+		{"out of range ASCIIFX_FPS is not a rate", "999", 0, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("ASCIIFX_FPS", c.env)
+			rf := &runFlags{chain: newChain(), fps: c.fps}
+			caps, err := rf.playCaps(devnull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if caps.FPS != c.want {
+				t.Fatalf("ASCIIFX_FPS=%q with --fps %d: Caps.FPS = %d, want %d", c.env, c.fps, caps.FPS, c.want)
+			}
+		})
+	}
+}

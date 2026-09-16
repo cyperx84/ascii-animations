@@ -29,18 +29,11 @@ func cmdPlay(e *env, args []string) error {
 	if *limit < 0 || *hold < 0 {
 		return usageErr("durations look like 500ms, 2s or 1m", "--limit and --hold must not be negative")
 	}
-	caps := term.Detect(os.Stdout)
-	if rf.profile != "" || rf.dither != "" {
-		profile, dither, err := rf.colorPrefs(os.Stdout)
-		if err != nil {
-			return err
-		}
-		// SetDither, not a plain assignment: it also marks the dither as the
-		// caller's, so Play does not re-resolve it from the environment.
-		caps.Profile = profile
-		caps.SetDither(dither)
-	}
 	b, err := rf.build(e, name)
+	if err != nil {
+		return err
+	}
+	caps, err := rf.playCaps(os.Stdout)
 	if err != nil {
 		return err
 	}
@@ -61,4 +54,31 @@ func cmdPlay(e *env, args []string) error {
 		return runtimeErr(err, "")
 	}
 	return nil
+}
+
+// playCaps is what one playback runs under: what Detect found, with the flags
+// that outrank it layered on top. Detection is a guess about the terminal; a
+// flag is the user saying otherwise, so the flag wins every time.
+//
+// Call it after build, which is where --fps is range-checked.
+func (rf *runFlags) playCaps(out *os.File) (term.Caps, error) {
+	caps := term.Detect(out)
+	if rf.profile != "" || rf.dither != "" {
+		profile, dither, err := rf.colorPrefs(out)
+		if err != nil {
+			return caps, err
+		}
+		// SetDither, not a plain assignment: it also settles the case where
+		// the dither asked for is the one Detect had already chosen.
+		caps.Profile = profile
+		caps.SetDither(dither)
+	}
+	if rf.fps > 0 {
+		// --fps is the rate asked for, not a ceiling to stay under, so it
+		// outranks both ASCIIFX_FPS and the transport cap Detect guessed.
+		// Caps.FPS keeps its library meaning; this raises it to what the run
+		// will tick at, which leaves Play capping the run by its own rate.
+		caps.FPS = rf.fps
+	}
+	return caps, nil
 }

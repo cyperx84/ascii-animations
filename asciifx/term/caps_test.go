@@ -28,6 +28,18 @@ func TestDetectTransportAndRenderingPrefs(t *testing.T) {
 		{"tmux is capped", env("TERM", "tmux-256color"), 15, tint.Bayer8, false, false},
 		{"screen is capped", env("TERM", "screen.xterm-256color"), 15, tint.Bayer8, false, false},
 		{"explicit fps wins", env("SSH_CONNECTION", "x", "ASCIIFX_FPS", "60", "TERM", "xterm"), 60, tint.Bayer8, false, false},
+		// An ASCIIFX_FPS that is not a usable answer must leave the transport
+		// cap standing, never uncap playback.
+		{"fps above the ceiling", env("ASCIIFX_FPS", "999", "TERM", "tmux-256color"), 15, tint.Bayer8, false, false},
+		{"fps of zero", env("ASCIIFX_FPS", "0", "TERM", "tmux-256color"), 15, tint.Bayer8, false, false},
+		{"negative fps", env("ASCIIFX_FPS", "-1", "TERM", "xterm"), 30, tint.Bayer8, false, false},
+		{"fps that is not a number", env("ASCIIFX_FPS", "abc", "TERM", "xterm"), 30, tint.Bayer8, false, false},
+		{"fps with trailing junk", env("ASCIIFX_FPS", "60fps", "TERM", "tmux-256color"), 15, tint.Bayer8, false, false},
+		{"fps in scientific notation", env("ASCIIFX_FPS", "1e3", "TERM", "xterm"), 30, tint.Bayer8, false, false},
+		{"fps with whitespace", env("ASCIIFX_FPS", " 60", "TERM", "tmux-256color"), 15, tint.Bayer8, false, false},
+		{"empty fps", env("ASCIIFX_FPS", "", "TERM", "xterm"), 30, tint.Bayer8, false, false},
+		{"the ceiling itself is allowed", env("ASCIIFX_FPS", "240", "TERM", "tmux-256color"), 240, tint.Bayer8, false, false},
+		{"one past the ceiling is not", env("ASCIIFX_FPS", "241", "TERM", "tmux-256color"), 15, tint.Bayer8, false, false},
 		{"sync off", env("ASCIIFX_SYNC", "0", "TERM", "xterm"), 30, tint.Bayer8, true, true},
 		{"sync on is still recorded", env("ASCIIFX_SYNC", "1", "TERM", "xterm"), 30, tint.Bayer8, false, true},
 		{"dither off", env("ASCIIFX_DITHER", "none", "TERM", "xterm"), 30, tint.NoDither, false, false},
@@ -345,5 +357,48 @@ func TestSameValueDitherAssignmentNeedsSetDither(t *testing.T) {
 	}
 	if n := len(paletteIndices(playStatic(t, explicit))); n != 1 {
 		t.Fatalf("Play used %d palette entries after SetDither(none), want 1", n)
+	}
+}
+
+func TestParseFPS(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want int
+		ok   bool
+	}{
+		{"60", 60, true},
+		{"1", 1, true},
+		{"240", 240, true},
+		{"241", 0, false},
+		{"0", 0, false},
+		{"-1", 0, false},
+		{"", 0, false},
+		{"abc", 0, false},
+		{"60fps", 0, false},
+		{"1e3", 0, false},
+		{" 60", 0, false},
+		{"60 ", 0, false},
+		{"+60", 60, true}, // strconv accepts a sign; it is still one integer
+		{"6.0", 0, false},
+	} {
+		got, ok := parseFPS(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("parseFPS(%q) = %d, %v; want %d, %v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// TestDetectFPSIsUncappedOffATerminal pins the one place a zero FPS is right:
+// a pipe has no transport to cap, so nothing is imposed unless ASCIIFX_FPS
+// asks for it.
+func TestDetectFPSIsUncappedOffATerminal(t *testing.T) {
+	if got := detect(false, env("TERM", "tmux-256color")).FPS; got != 0 {
+		t.Errorf("off a terminal: FPS = %d, want 0", got)
+	}
+	if got := detect(false, env("TERM", "tmux-256color", "ASCIIFX_FPS", "999")).FPS; got != 0 {
+		t.Errorf("off a terminal with a bad ASCIIFX_FPS: FPS = %d, want 0", got)
+	}
+	if got := detect(false, env("TERM", "tmux-256color", "ASCIIFX_FPS", "48")).FPS; got != 48 {
+		t.Errorf("off a terminal with ASCIIFX_FPS=48: FPS = %d, want 48", got)
 	}
 }

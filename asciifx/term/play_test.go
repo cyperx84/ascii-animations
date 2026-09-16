@@ -185,3 +185,25 @@ func TestWatchKeysSignalsQuit(t *testing.T) {
 	}
 	<-done
 }
+
+// TestPlayFPS pins what Caps.FPS means to Play: a ceiling, never a floor.
+// The CLI raises the ceiling to the rate --fps asked for, which is why the
+// equal case has to come out at that rate rather than at the run's default.
+func TestPlayFPS(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		runFPS, capIn int
+		want          int
+	}{
+		{"no cap", 60, 0, 60},
+		{"transport cap bites", 60, 15, 15},
+		{"cap raised to the rate asked for", 60, 60, 60},
+		{"cap above the run changes nothing", 24, 60, 24},
+		{"cap equal to the run", 30, 30, 30},
+		{"a negative cap is not a cap", 30, -1, 30},
+	} {
+		if got := playFPS(c.runFPS, c.capIn); got != c.want {
+			t.Errorf("%s: playFPS(%d, %d) = %d, want %d", c.name, c.runFPS, c.capIn, got, c.want)
+		}
+	}
+}

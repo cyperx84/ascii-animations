@@ -6,6 +6,7 @@ package term
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
@@ -153,13 +154,14 @@ func detect(tty bool, env func(string) string) Caps {
 		c.syncSet = true
 		c.NoSync = v == "0" || v == "false"
 	}
-	if v := env("ASCIIFX_FPS"); v != "" {
-		var n int
-		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 && n <= 240 {
-			c.FPS = n
-		}
-	} else if tty {
+	// The transport cap first, so an ASCIIFX_FPS that is not a usable answer
+	// falls back to it instead of leaving playback uncapped, which is the
+	// opposite of what someone setting the variable at all could mean.
+	if tty {
 		c.FPS = transportFPS(env)
+	}
+	if n, ok := parseFPS(env("ASCIIFX_FPS")); ok {
+		c.FPS = n
 	}
 	d := tint.Bayer8
 	if v := env("ASCIIFX_DITHER"); v != "" {
@@ -174,6 +176,22 @@ func detect(tty bool, env func(string) string) Caps {
 	c.ditherAuto = DitherFor(c.Profile, d)
 	c.Dither = c.ditherAuto
 	return c
+}
+
+// MaxFPS is the highest tick rate this package will accept, and the ceiling
+// the CLI checks --fps against. Past it the terminal is the bottleneck, not
+// the run.
+const MaxFPS = 240
+
+// parseFPS reads a tick rate. It is deliberately strict: a plain positive
+// integer up to MaxFPS and nothing else, so "60fps", "0", "-1" and "1e3" are
+// not answers and the caller keeps whatever it had.
+func parseFPS(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 || n > MaxFPS {
+		return 0, false
+	}
+	return n, true
 }
 
 // transportFPS is the tick-rate cap for the link the terminal sits behind.
