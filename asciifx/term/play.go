@@ -90,9 +90,7 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 	if raw, ok := makeRaw(); ok {
 		defer raw()
 		if o.Probe && !o.Caps.syncSet {
-			if got := probeRaw(os.Stdin, o.Out, probeTimeout); got.SyncKnown {
-				o.Caps.NoSync, o.Caps.SyncKnown = got.NoSync, true
-			}
+			o.Caps.mergeProbe(probeRaw(os.Stdin, o.Out, probeTimeout))
 		}
 		// Stop the watcher and wait for it before raw mode is restored and
 		// Play returns, so no goroutine is left reading the host's stdin.

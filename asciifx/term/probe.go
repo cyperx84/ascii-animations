@@ -25,6 +25,9 @@ import (
 // emits single-width glyphs, so clustering cannot change what it draws.
 const capQueries = "\x1b[?2026$p\x1b[c"
 
+// isTerminal reports whether f is an interactive terminal.
+func isTerminal(f *os.File) bool { return f != nil && xterm.IsTerminal(int(f.Fd())) }
+
 // Probe asks the terminal what it supports. It is the only function here that
 // reads from the terminal, so it is opt-in: it runs at most for timeout and
 // may consume input typed during that window.
@@ -39,7 +42,7 @@ func Probe(in, out *os.File, timeout time.Duration) Caps {
 		return c
 	}
 	fd := int(in.Fd())
-	if !xterm.IsTerminal(fd) || !xterm.IsTerminal(int(out.Fd())) {
+	if !isTerminal(in) || !isTerminal(out) {
 		return c
 	}
 	state, err := xterm.MakeRaw(fd)

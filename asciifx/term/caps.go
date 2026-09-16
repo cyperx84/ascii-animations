@@ -64,11 +64,21 @@ type Caps struct {
 	// Reason explains why Animate is false, for logs and --json output.
 	Reason string
 	// NoSync disables synchronized output (mode 2026). Terminals ignore a
-	// mode they do not know, so this is only set when a probe got an explicit
-	// negative answer, or by ASCIIFX_SYNC=0.
+	// mode they do not know, so it stays false unless something says
+	// otherwise: ASCIIFX_SYNC=0, a probe that got an explicit negative
+	// answer, or a caller that sets it.
+	//
+	// Turning it off is one way. A probe that finds the mode supported will
+	// not clear a NoSync that was already true, because the caller who set it
+	// knows something the probe does not.
 	NoSync bool
-	// SyncKnown is true when a probe got a definite answer about mode 2026,
-	// so a caller can tell "not supported" from "never asked".
+	// SyncKnown is true when the terminal answered a probe about mode 2026.
+	// It separates an answer from never having asked; it does not say which
+	// answer. NoSync beside it may be the terminal's verdict, or the caller's
+	// own, or ASCIIFX_SYNC=0, because Play folds a probe into a Caps without
+	// overwriting a disable that was already there. A caller that needs the
+	// terminal's own verdict reads the Caps that Probe returned, before it is
+	// merged into anything.
 	SyncKnown bool
 	// FPS caps the tick rate. Nothing is capped when it is zero. Slower
 	// transports (SSH, tmux) get a lower cap because dropped frames look
@@ -104,6 +114,20 @@ type Caps struct {
 	// syncSet records that ASCIIFX_SYNC was given explicitly, so Probe cannot
 	// overwrite the user's answer.
 	syncSet bool
+}
+
+// mergeProbe folds a probe's answer into c. Disabling synchronized output is
+// monotonic: a probe may turn it off when the terminal says mode 2026 is not
+// supported, but an answer of "supported" is not grounds to overrule a caller
+// who had already disabled it. SyncKnown still records that the terminal
+// answered at all, which is all it claims: after this, NoSync may be the
+// terminal's verdict or the caller's own.
+func (c *Caps) mergeProbe(got Caps) {
+	if !got.SyncKnown {
+		return
+	}
+	c.NoSync = c.NoSync || got.NoSync
+	c.SyncKnown = true
 }
 
 // SetDither fixes the dither to render with. Assigning Dither directly does
