@@ -76,6 +76,13 @@ type Caps struct {
 	// Dither stipples gradients when Profile is a palette. Zero is off.
 	Dither tint.Dither
 
+	// DitherPref is the dither the environment asked for, before Profile had
+	// its say. Detect resolves Dither for the profile it detected, so a caller
+	// that overrides the profile — `--profile 256` on a pipe, say — must
+	// re-resolve from this or it inherits a decision made for a profile that
+	// is no longer in play, and dithering silently stays off.
+	DitherPref tint.Dither
+
 	// syncSet records that ASCIIFX_SYNC was given explicitly, so Probe cannot
 	// overwrite the user's answer.
 	syncSet bool
@@ -129,6 +136,7 @@ func detect(tty bool, env func(string) string) Caps {
 	if set("NO_COLOR") {
 		d = tint.NoDither
 	}
+	c.DitherPref = d
 	c.Dither = DitherFor(c.Profile, d)
 	return c
 }

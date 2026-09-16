@@ -176,7 +176,9 @@ func (rf *runFlags) colorPrefs(out *os.File) (term.Profile, tint.Dither, error) 
 		}
 		caps.Profile = p
 	}
-	d := caps.Dither
+	// Resolve from the preference, not from caps.Dither: Detect already folded
+	// the detected profile in, and --profile may have just replaced it.
+	d := caps.DitherPref
 	if rf.dither != "" {
 		parsed, err := tint.ParseDither(rf.dither)
 		if err != nil {
