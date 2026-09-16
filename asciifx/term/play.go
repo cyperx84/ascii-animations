@@ -66,7 +66,7 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(o.Out, ANSIWith(b, o.Caps.Profile, o.Caps.Dither))
+		_, err = fmt.Fprintln(o.Out, ANSIWith(b, o.Caps.Profile, o.Caps.dither()))
 		return err
 	}
 
@@ -103,7 +103,7 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 		}()
 	}
 
-	ren := &Renderer{Profile: o.Caps.Profile, Sync: !o.Caps.NoSync, Dither: o.Caps.Dither}
+	ren := &Renderer{Profile: o.Caps.Profile, Sync: !o.Caps.NoSync, Dither: o.Caps.dither()}
 	fps := r.FPS()
 	if o.Caps.FPS > 0 {
 		// Tick semantics stay the run's; only the wall-clock rate changes, so

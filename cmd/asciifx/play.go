@@ -35,7 +35,10 @@ func cmdPlay(e *env, args []string) error {
 		if err != nil {
 			return err
 		}
-		caps.Profile, caps.Dither = profile, dither
+		// SetDither, not a plain assignment: it also marks the dither as the
+		// caller's, so Play does not re-resolve it from the environment.
+		caps.Profile = profile
+		caps.SetDither(dither)
 	}
 	b, err := rf.build(e, name)
 	if err != nil {

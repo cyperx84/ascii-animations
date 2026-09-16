@@ -215,3 +215,38 @@ func TestRenderReviewRegressions(t *testing.T) {
 		}
 	}
 }
+
+// TestExplicitProfileIgnoresNoColor pins the CLI half of the stale-dither fix.
+// NO_COLOR sets the detected profile to none, and the dither that goes with a
+// palette used to be discarded with it, so `--profile 256` rendered undithered
+// under NO_COLOR and dithered without it — the same flags, different bytes.
+func TestExplicitProfileIgnoresNoColor(t *testing.T) {
+	for _, k := range []string{"NO_COLOR", "ASCIIFX_COLOR", "ASCIIFX_DITHER"} {
+		t.Setenv(k, "")
+	}
+	args := []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "256", "--seed", "1"}
+	code, want, stderr := runCLI(t, "", args...)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	if !strings.Contains(want, "38;5;") {
+		t.Fatal("--profile 256 did not emit 256-colour output")
+	}
+
+	t.Setenv("NO_COLOR", "1")
+	if _, got, _ := runCLI(t, "", args...); got != want {
+		t.Fatal("NO_COLOR changed the output of an explicit --profile 256")
+	}
+	// ASCIIFX_DITHER is a preference about palettes, not about colour, so it
+	// has to survive NO_COLOR as well.
+	t.Setenv("ASCIIFX_DITHER", "bayer8")
+	if _, got, _ := runCLI(t, "", args...); got != want {
+		t.Fatal("NO_COLOR suppressed an explicit ASCIIFX_DITHER=bayer8")
+	}
+	// ...and turning the dither off explicitly still works under NO_COLOR.
+	t.Setenv("ASCIIFX_DITHER", "")
+	_, off, _ := runCLI(t, "", append(append([]string{}, args...), "--dither", "none")...)
+	if off == want {
+		t.Fatal("--dither none had no effect under NO_COLOR")
+	}
+}

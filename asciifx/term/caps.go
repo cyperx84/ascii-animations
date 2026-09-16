@@ -74,18 +74,52 @@ type Caps struct {
 	// better than queued ones.
 	FPS int
 	// Dither stipples gradients when Profile is a palette. Zero is off.
+	//
+	// Detect resolves it for the profile it detected, so Play re-resolves it
+	// from DitherPref whenever Profile has since been changed; otherwise an
+	// explicit profile inherits a decision made for one that is no longer in
+	// play. Assigning any other value here is your answer and is used as
+	// given. The one case that cannot be told apart is assigning exactly the
+	// value Detect had already chosen — say so with SetDither.
 	Dither tint.Dither
 
 	// DitherPref is the dither the environment asked for, before Profile had
-	// its say. Detect resolves Dither for the profile it detected, so a caller
-	// that overrides the profile — `--profile 256` on a pipe, say — must
-	// re-resolve from this or it inherits a decision made for a profile that
-	// is no longer in play, and dithering silently stays off.
+	// its say: ASCIIFX_DITHER, or bayer8. It outlives the profile on purpose,
+	// so overriding Profile has something to resolve against. Setting it on a
+	// Caps you built yourself opts into the same resolution.
 	DitherPref tint.Dither
+
+	// ditherAuto is the value Detect wrote into Dither. Dither is re-resolved
+	// only while it still holds that value, so assigning a different one is
+	// honoured without needing SetDither. A Caps built by hand leaves both
+	// zero; re-resolving its zero DitherPref yields NoDither either way, so
+	// the comparison costs it nothing.
+	ditherAuto tint.Dither
+
+	// ditherSet settles the one case the comparison cannot: SetDither called
+	// with exactly the value Detect had already chosen.
+	ditherSet bool
 
 	// syncSet records that ASCIIFX_SYNC was given explicitly, so Probe cannot
 	// overwrite the user's answer.
 	syncSet bool
+}
+
+// SetDither fixes the dither to render with. Assigning Dither directly does
+// the same thing, except when the value assigned is the one Detect had already
+// chosen; use this to say you mean it.
+func (c *Caps) SetDither(d tint.Dither) {
+	c.Dither, c.ditherSet = d, true
+}
+
+// dither is the dither to render with. Detect's own answer is re-resolved
+// against the current Profile, because the caller may have replaced the
+// profile that answer was made for. Anything the caller chose is used as-is.
+func (c Caps) dither() tint.Dither {
+	if c.ditherSet || c.Dither != c.ditherAuto {
+		return c.Dither
+	}
+	return DitherFor(c.Profile, c.DitherPref)
 }
 
 // Detect inspects the environment and output file. Every decision has an
@@ -133,11 +167,12 @@ func detect(tty bool, env func(string) string) Caps {
 			d = parsed
 		}
 	}
-	if set("NO_COLOR") {
-		d = tint.NoDither
-	}
+	// NO_COLOR deliberately does not clear d: it already forced Profile to
+	// NoColor, which is what DitherFor reads, and zeroing the preference too
+	// would leave an explicit `--profile 256` with no dither to fall back on.
 	c.DitherPref = d
-	c.Dither = DitherFor(c.Profile, d)
+	c.ditherAuto = DitherFor(c.Profile, d)
+	c.Dither = c.ditherAuto
 	return c
 }
 

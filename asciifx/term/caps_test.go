@@ -1,10 +1,14 @@
 package term
 
 import (
+	"context"
+	"math/rand/v2"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/cyperx84/ascii-animations/asciifx/cell"
+	"github.com/cyperx84/ascii-animations/asciifx/fx"
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
 )
 
@@ -128,5 +132,218 @@ func TestRendererDitherIsDeterministicAndPositional(t *testing.T) {
 	dithered := paletteIndices(first)
 	if len(dithered) < 2 {
 		t.Fatalf("dithered flat colour used only %d palette entries; the stipple is missing", len(dithered))
+	}
+}
+
+// flat paints every cell the one colour flatBuffer uses, so a dithered encode
+// has to stipple across two palette entries and an undithered one cannot.
+type flat struct{}
+
+func (flat) Duration() float64 { return 0.1 }
+func (flat) Step(f *fx.Frame) {
+	c := tint.MustHex("#3a7bd5")
+	for y := 0; y < f.Buf.H; y++ {
+		for x := 0; x < f.Buf.W; x++ {
+			f.Buf.Set(x, y, cell.Cell{Rune: '\u2588', FG: c})
+		}
+	}
+}
+
+func flatRun(t *testing.T) *fx.Run {
+	t.Helper()
+	spec := &fx.Spec{
+		Name: "flat", Kind: fx.Transition, FPS: 10, DefW: 8, DefH: 8,
+		New: func(fx.Values, int, int, *rand.Rand) (fx.Effect, error) { return flat{}, nil },
+	}
+	r, err := fx.NewRun(spec, fx.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// playStatic runs the non-animated path, which encodes one frame with exactly
+// the profile and dither Play resolved.
+func playStatic(t *testing.T, caps Caps) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "static")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	caps.Animate = false
+	if err := Play(context.Background(), flatRun(t), PlayOptions{Out: f, Caps: caps}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(f.Name())
+	return string(b)
+}
+
+// TestDetectKeepsDitherPreferenceUnderNoColor pins the NO_COLOR half of the
+// stale-dither bug: NO_COLOR still means no colour, but it must not also erase
+// the dither the environment asked for, or an explicit profile has nothing to
+// fall back on.
+func TestDetectKeepsDitherPreferenceUnderNoColor(t *testing.T) {
+	c := detect(true, env("NO_COLOR", "1", "TERM", "xterm-256color"))
+	if c.Profile != NoColor || c.Dither != tint.NoDither {
+		t.Fatalf("NO_COLOR must still disable colour and dither: Profile=%v Dither=%v", c.Profile, c.Dither)
+	}
+	if c.DitherPref != tint.Bayer8 {
+		t.Fatalf("DitherPref = %v, want bayer8: the preference outlives the profile", c.DitherPref)
+	}
+	c.Profile = ANSI256
+	if got := c.dither(); got != tint.Bayer8 {
+		t.Fatalf("after overriding the profile under NO_COLOR, dither = %v, want bayer8", got)
+	}
+	// An explicit ASCIIFX_DITHER survives NO_COLOR too.
+	d := detect(true, env("NO_COLOR", "1", "ASCIIFX_DITHER", "bayer4", "TERM", "xterm-256color"))
+	d.Profile = ANSI256
+	if got := d.dither(); got != tint.Bayer4 {
+		t.Fatalf("ASCIIFX_DITHER=bayer4 under NO_COLOR: dither = %v, want bayer4", got)
+	}
+}
+
+// TestProfileOverrideReresolvesDetectedDither is the bug 4d20d7d fixed in the
+// CLI, pinned at the layer every library caller goes through: Detect resolves
+// Dither for the profile it saw, so replacing Profile has to re-resolve it.
+func TestProfileOverrideReresolvesDetectedDither(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		env  func(string) string
+		to   Profile
+		want tint.Dither
+	}{
+		{"truecolor terminal, 256 asked for", env("COLORTERM", "truecolor", "TERM", "xterm-256color"), ANSI256, tint.Bayer8},
+		{"truecolor terminal, 16 asked for", env("COLORTERM", "truecolor", "TERM", "xterm-256color"), ANSI16, tint.Bayer8},
+		{"256 terminal, truecolor asked for", env("TERM", "xterm-256color"), TrueColor, tint.NoDither},
+		{"256 terminal, none asked for", env("TERM", "xterm-256color"), NoColor, tint.NoDither},
+	} {
+		caps := detect(true, c.env)
+		caps.Profile = c.to
+		if got := caps.dither(); got != c.want {
+			t.Errorf("%s: dither = %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	// End to end through Play: a flat colour must be stippled once the caller
+	// has asked for a palette profile.
+	caps := detect(true, env("COLORTERM", "truecolor", "TERM", "xterm-256color"))
+	caps.Profile = ANSI256
+	if n := len(paletteIndices(playStatic(t, caps))); n < 2 {
+		t.Fatalf("Play used %d palette entries after Caps.Profile = ANSI256; the dither did not come back", n)
+	}
+}
+
+// TestHandBuiltCapsDitherIsUsedAsGiven is the other side of the same fix: a
+// Caps the caller assembled has no detected preference to re-resolve from, so
+// its Dither must be taken literally. Re-resolving unconditionally would read
+// the zero DitherPref and silently drop the caller's bayer8.
+func TestHandBuiltCapsDitherIsUsedAsGiven(t *testing.T) {
+	on := Caps{Profile: ANSI256, Dither: tint.Bayer8}
+	if got := on.dither(); got != tint.Bayer8 {
+		t.Fatalf("hand-built Caps: dither = %v, want bayer8 (DitherPref is %v and must not be consulted)", got, on.DitherPref)
+	}
+	if n := len(paletteIndices(playStatic(t, on))); n < 2 {
+		t.Fatalf("Play used %d palette entries for a hand-built Caps{Dither: bayer8}, want a stipple", n)
+	}
+	off := Caps{Profile: ANSI256}
+	if got := off.dither(); got != tint.NoDither {
+		t.Fatalf("hand-built Caps with no dither: dither = %v, want none", got)
+	}
+	if n := len(paletteIndices(playStatic(t, off))); n != 1 {
+		t.Fatalf("Play used %d palette entries for a hand-built Caps with no dither, want 1", n)
+	}
+}
+
+// TestSetDitherOutranksReresolution pins the escape hatch: once the caller has
+// chosen, a later Profile change must not undo the choice.
+func TestSetDitherOutranksReresolution(t *testing.T) {
+	caps := detect(true, env("TERM", "xterm-256color"))
+	caps.SetDither(tint.NoDither)
+	caps.Profile = ANSI256
+	if got := caps.dither(); got != tint.NoDither {
+		t.Fatalf("dither = %v after SetDither(none), want none", got)
+	}
+	if n := len(paletteIndices(playStatic(t, caps))); n != 1 {
+		t.Fatalf("Play used %d palette entries after SetDither(none), want 1", n)
+	}
+	caps = detect(true, env("COLORTERM", "truecolor", "TERM", "xterm-256color"))
+	caps.SetDither(tint.Bayer4)
+	caps.Profile = ANSI256
+	if got := caps.dither(); got != tint.Bayer4 {
+		t.Fatalf("dither = %v after SetDither(bayer4), want bayer4", got)
+	}
+}
+
+// TestDirectDitherAssignmentAfterDetectIsHonoured pins the public API: Dither
+// is an exported field on a Caps that Detect filled in, and assigning to it
+// has always been how a caller overrides the detected answer. Re-resolution
+// must not swallow that.
+func TestDirectDitherAssignmentAfterDetectIsHonoured(t *testing.T) {
+	// Turning a detected dither off.
+	off := detect(true, env("TERM", "xterm-256color"))
+	if off.Dither != tint.Bayer8 {
+		t.Fatalf("precondition: a 256 terminal detects %v, want bayer8", off.Dither)
+	}
+	off.Dither = tint.NoDither
+	if got := off.dither(); got != tint.NoDither {
+		t.Fatalf("Dither = none assigned directly: dither = %v, want none", got)
+	}
+	if n := len(paletteIndices(playStatic(t, off))); n != 1 {
+		t.Fatalf("Play used %d palette entries after Dither = none, want 1", n)
+	}
+
+	// Opting in where detection had nothing to dither onto, alongside the
+	// profile override that is the whole reason re-resolution exists.
+	on := detect(true, env("COLORTERM", "truecolor", "TERM", "xterm-256color"))
+	if on.Dither != tint.NoDither {
+		t.Fatalf("precondition: a truecolour terminal detects %v, want none", on.Dither)
+	}
+	on.Profile = ANSI256
+	on.Dither = tint.Bayer4
+	if got := on.dither(); got != tint.Bayer4 {
+		t.Fatalf("Dither = bayer4 assigned directly: dither = %v, want bayer4", got)
+	}
+	if n := len(paletteIndices(playStatic(t, on))); n < 2 {
+		t.Fatalf("Play used %d palette entries after Dither = bayer4, want a stipple", n)
+	}
+
+	// Opting in without touching Profile at all: the environment asked for no
+	// dither, the caller wants one, and the profile already has a palette.
+	back := detect(true, env("TERM", "xterm-256color", "ASCIIFX_DITHER", "none"))
+	if back.Profile != ANSI256 || back.Dither != tint.NoDither {
+		t.Fatalf("precondition: Profile=%v Dither=%v", back.Profile, back.Dither)
+	}
+	back.Dither = tint.Bayer8
+	if got := back.dither(); got != tint.Bayer8 {
+		t.Fatalf("Dither = bayer8 assigned over ASCIIFX_DITHER=none: dither = %v, want bayer8", got)
+	}
+	if n := len(paletteIndices(playStatic(t, back))); n < 2 {
+		t.Fatalf("Play used %d palette entries after Dither = bayer8, want a stipple", n)
+	}
+}
+
+// TestSameValueDitherAssignmentNeedsSetDither pins the one case the value
+// comparison cannot decide, and the escape hatch for it. Assigning the value
+// Detect had already chosen leaves no trace, so it is still treated as
+// Detect's answer and re-resolved.
+func TestSameValueDitherAssignmentNeedsSetDither(t *testing.T) {
+	e := env("COLORTERM", "truecolor", "TERM", "xterm-256color")
+
+	ambiguous := detect(true, e)
+	ambiguous.Dither = tint.NoDither // exactly what Detect chose
+	ambiguous.Profile = ANSI256
+	if got := ambiguous.dither(); got != tint.Bayer8 {
+		t.Fatalf("assigning the detected value is indistinguishable from leaving it: dither = %v, want the re-resolved bayer8", got)
+	}
+
+	explicit := detect(true, e)
+	explicit.SetDither(tint.NoDither)
+	explicit.Profile = ANSI256
+	if got := explicit.dither(); got != tint.NoDither {
+		t.Fatalf("SetDither(none): dither = %v, want none", got)
+	}
+	if n := len(paletteIndices(playStatic(t, explicit))); n != 1 {
+		t.Fatalf("Play used %d palette entries after SetDither(none), want 1", n)
 	}
 }
