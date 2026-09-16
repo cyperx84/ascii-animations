@@ -25,6 +25,9 @@ import (
 // emits single-width glyphs, so clustering cannot change what it draws.
 const capQueries = "\x1b[?2026$p\x1b[c"
 
+// isTerminal reports whether f is an interactive terminal.
+func isTerminal(f *os.File) bool { return f != nil && xterm.IsTerminal(int(f.Fd())) }
+
 // Probe asks the terminal what it supports. It is the only function here that
 // reads from the terminal, so it is opt-in: it runs at most for timeout and
 // may consume input typed during that window.
@@ -39,7 +42,7 @@ func Probe(in, out *os.File, timeout time.Duration) Caps {
 		return c
 	}
 	fd := int(in.Fd())
-	if !xterm.IsTerminal(fd) || !xterm.IsTerminal(int(out.Fd())) {
+	if !isTerminal(in) || !isTerminal(out) {
 		return c
 	}
 	state, err := xterm.MakeRaw(fd)
@@ -57,7 +60,7 @@ func probeRaw(in, out *os.File, timeout time.Duration) Caps {
 	if timeout <= 0 {
 		timeout = 100 * time.Millisecond
 	}
-	reply := query(in, out, timeout, in.SetReadDeadline)
+	reply := query(int(in.Fd()), out, timeout)
 	c := Caps{Animate: true}
 	if sync := parseSync(reply); sync >= 0 {
 		c.SyncKnown = true
@@ -66,24 +69,43 @@ func probeRaw(in, out *os.File, timeout time.Duration) Caps {
 	return c
 }
 
-// query writes the capability probes and reads replies until DA1 arrives, the
-// deadline passes, or 4 KiB have arrived. It returns whatever was read, which
-// may be empty. A nil deadline function reads until DA1 or an error.
-func query(in io.Reader, out io.Writer, timeout time.Duration, deadline func(time.Time) error) string {
+// query writes the capability probes to out and reads fd until DA1 arrives,
+// the timeout passes, or 4 KiB have arrived. It returns whatever was read,
+// which may be empty or a fragment: a DECRQM answer with no DA1 behind it is
+// still an answer, so partial replies are kept.
+//
+// It never blocks in a read. Every read is preceded by a readiness wait
+// bounded by what is left of the timeout, which is one overall budget rather
+// than one per read. A goroutine with a timer would be the obvious alternative
+// and is the wrong one: the read it abandons stays parked on the terminal, and
+// the next thing to read stdin -- the key watcher, or the host shell after
+// Play exits -- races it for the user's keystrokes.
+//
+// A platform with no readiness check writes nothing at all. Asking a question
+// whose answer cannot be collected only leaves the reply sitting in the input
+// buffer for whatever reads stdin next.
+func query(fd int, out io.Writer, timeout time.Duration) string {
+	if !canWaitReadable {
+		// Ask nothing rather than ask and walk away: the reply would be left
+		// in the terminal's input buffer for whatever reads stdin next.
+		return ""
+	}
 	if _, err := io.WriteString(out, capQueries); err != nil {
 		return ""
 	}
-	if deadline != nil {
-		if err := deadline(time.Now().Add(timeout)); err != nil {
-			// The descriptor is not pollable; skip rather than block forever.
-			return ""
-		}
-		defer func() { _ = deadline(time.Time{}) }()
-	}
+	deadline := time.Now().Add(timeout)
 	var sb strings.Builder
 	buf := make([]byte, 256)
 	for sb.Len() < 4096 {
-		n, err := in.Read(buf)
+		left := time.Until(deadline)
+		if left <= 0 {
+			break
+		}
+		ready, err := waitReadable(fd, left)
+		if err != nil || !ready {
+			break
+		}
+		n, err := readReady(fd, buf)
 		if n > 0 {
 			sb.Write(buf[:n])
 			if hasDA1(sb.String()) {

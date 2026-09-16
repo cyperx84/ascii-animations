@@ -10,7 +10,15 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Both platforms, and fail-fast off: a failure on one runner must not
+    # cancel the other, because the divergence between them is the thing
+    # this matrix exists to show.
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

@@ -66,7 +66,7 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(o.Out, ANSIWith(b, o.Caps.Profile, o.Caps.Dither))
+		_, err = fmt.Fprintln(o.Out, ANSIWith(b, o.Caps.Profile, o.Caps.dither()))
 		return err
 	}
 
@@ -90,9 +90,7 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 	if raw, ok := makeRaw(); ok {
 		defer raw()
 		if o.Probe && !o.Caps.syncSet {
-			if got := probeRaw(os.Stdin, o.Out, probeTimeout); got.SyncKnown {
-				o.Caps.NoSync, o.Caps.SyncKnown = got.NoSync, true
-			}
+			o.Caps.mergeProbe(probeRaw(os.Stdin, o.Out, probeTimeout))
 		}
 		// Stop the watcher and wait for it before raw mode is restored and
 		// Play returns, so no goroutine is left reading the host's stdin.
@@ -103,14 +101,8 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 		}()
 	}
 
-	ren := &Renderer{Profile: o.Caps.Profile, Sync: !o.Caps.NoSync, Dither: o.Caps.Dither}
-	fps := r.FPS()
-	if o.Caps.FPS > 0 {
-		// Tick semantics stay the run's; only the wall-clock rate changes, so
-		// a capped playback still shows exactly the same frames.
-		fps = min(fps, o.Caps.FPS)
-	}
-	dt := time.Second / time.Duration(fps)
+	ren := &Renderer{Profile: o.Caps.Profile, Sync: !o.Caps.NoSync, Dither: o.Caps.dither()}
+	dt := time.Second / time.Duration(playFPS(r.FPS(), o.Caps.FPS))
 	ticker := time.NewTicker(dt)
 	defer ticker.Stop()
 	began := time.Now() // whole playback, for Limit
@@ -194,6 +186,17 @@ func Play(ctx context.Context, r *fx.Run, o PlayOptions) (err error) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// playFPS is the wall-clock tick rate for a run: its own rate, held down by
+// Caps.FPS. Tick semantics stay the run's; only the wall-clock rate changes,
+// so a capped playback still shows exactly the same frames. A caller that
+// wants a rate rather than a ceiling sets Caps.FPS to that rate.
+func playFPS(runFPS, cap int) int {
+	if cap > 0 {
+		return min(runFPS, cap)
+	}
+	return runFPS
 }
 
 func setupTerminal(o PlayOptions, r *fx.Run) (restore func()) {

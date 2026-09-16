@@ -215,3 +215,86 @@ func TestRenderReviewRegressions(t *testing.T) {
 		}
 	}
 }
+
+// TestExplicitProfileIgnoresNoColor pins the CLI half of the stale-dither fix.
+// NO_COLOR sets the detected profile to none, and the dither that goes with a
+// palette used to be discarded with it, so `--profile 256` rendered undithered
+// under NO_COLOR and dithered without it — the same flags, different bytes.
+func TestExplicitProfileIgnoresNoColor(t *testing.T) {
+	for _, k := range []string{"NO_COLOR", "ASCIIFX_COLOR", "ASCIIFX_DITHER"} {
+		t.Setenv(k, "")
+	}
+	args := []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "256", "--seed", "1"}
+	code, want, stderr := runCLI(t, "", args...)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	if !strings.Contains(want, "38;5;") {
+		t.Fatal("--profile 256 did not emit 256-colour output")
+	}
+
+	t.Setenv("NO_COLOR", "1")
+	if _, got, _ := runCLI(t, "", args...); got != want {
+		t.Fatal("NO_COLOR changed the output of an explicit --profile 256")
+	}
+	// ASCIIFX_DITHER is a preference about palettes, not about colour, so it
+	// has to survive NO_COLOR as well.
+	t.Setenv("ASCIIFX_DITHER", "bayer8")
+	if _, got, _ := runCLI(t, "", args...); got != want {
+		t.Fatal("NO_COLOR suppressed an explicit ASCIIFX_DITHER=bayer8")
+	}
+	// ...and turning the dither off explicitly still works under NO_COLOR.
+	t.Setenv("ASCIIFX_DITHER", "")
+	_, off, _ := runCLI(t, "", append(append([]string{}, args...), "--dither", "none")...)
+	if off == want {
+		t.Fatal("--dither none had no effect under NO_COLOR")
+	}
+}
+
+// TestPlayCapsFPSPrecedence pins what playCaps does with --fps: a positive
+// one replaces Caps.FPS outright, whatever put a value there.
+//
+// out is os.DevNull, so Detect reports no terminal and the transport cap never
+// runs -- every non-zero starting value here comes from ASCIIFX_FPS. That is
+// enough, because playCaps does not care where Caps.FPS came from. Where a
+// transport cap comes from is term.TestDetectTransportAndRenderingPrefs, which
+// calls detect with tty=true; what Play then does with a cap is
+// term.TestPlayFPS. Asserting resolved state rather than counting frames
+// against a clock keeps all three deterministic.
+func TestPlayCapsFPSPrecedence(t *testing.T) {
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devnull.Close()
+
+	for _, c := range []struct {
+		name string
+		env  string
+		fps  int
+		want int
+	}{
+		{"nothing asked for", "", 0, 0},
+		{"ASCIIFX_FPS alone", "60", 0, 60},
+		{"--fps alone", "", 24, 24},
+		{"--fps outranks ASCIIFX_FPS downwards", "60", 24, 24},
+		{"--fps outranks ASCIIFX_FPS upwards", "15", 90, 90},
+		{"an unusable ASCIIFX_FPS is not a rate", "abc", 0, 0},
+		{"...nor does it block --fps", "abc", 24, 24},
+		{"a partially parsed ASCIIFX_FPS is not a rate", "60fps", 0, 0},
+		{"zero ASCIIFX_FPS is not a rate", "0", 0, 0},
+		{"out of range ASCIIFX_FPS is not a rate", "999", 0, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("ASCIIFX_FPS", c.env)
+			rf := &runFlags{chain: newChain(), fps: c.fps}
+			caps, err := rf.playCaps(devnull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if caps.FPS != c.want {
+				t.Fatalf("ASCIIFX_FPS=%q with --fps %d: Caps.FPS = %d, want %d", c.env, c.fps, caps.FPS, c.want)
+			}
+		})
+	}
+}

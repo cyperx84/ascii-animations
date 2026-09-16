@@ -9,7 +9,8 @@ const runFlagsHelp = `Effect flags:
   -p key=value        effect param (repeatable); applies to the effect named last
   --seed N            random seed (default 1); same seed, same frames
   --w N --h N         size in cells (default: effect default, grown to fit content)
-  --fps N             tick rate (default: effect's recommended fps)
+  --fps N             tick rate (default: effect's recommended fps). For
+                      play it also lifts the transport cap below.
   --profile P         colour profile: truecolor, 256, 16, none (default: detected)
   --dither D          ordered dither for 16/256 colour: bayer8 (default),
                       bayer4, none. Stable per cell, so still frames do not
@@ -141,7 +142,7 @@ Fullscreen play fits the terminal unless --w/--h are given. When stdout is
 not a terminal, CI is set, TERM=dumb or ASCIIFX_REDUCED_MOTION=1, a single
 static frame is printed instead. ASCIIFX_FORCE_ANIMATION=1 overrides that;
 ASCIIFX_COLOR and NO_COLOR control colour, and ASCIIFX_FPS caps the tick rate
-(30 locally, 15 over SSH, tmux or screen).
+(30 locally, 15 over SSH, tmux or screen). An explicit --fps outranks both.
 
 ` + runFlagsHelp + `
 Examples:

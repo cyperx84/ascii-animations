@@ -6,6 +6,7 @@ package term
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
@@ -52,8 +53,19 @@ func DitherFor(p Profile, d tint.Dither) tint.Dither {
 }
 
 // Caps is what the output terminal can do and whether animating is wanted.
-// Every field's zero value means "no restriction", so a caller that builds a
-// Caps literal gets the same behaviour as an animated truecolour terminal.
+//
+// The zero value is conservative, not permissive. It is NoColor, not animated,
+// uncapped, undithered and with synchronized output left alone -- the safe
+// thing to send at a terminal nothing is known about, which is not the same as
+// an unrestricted one. Two of those are the opposite of "no restriction":
+// Profile's zero is NoColor because that is the first Profile constant, and
+// Animate's zero is false, so `Play(ctx, r, PlayOptions{})` prints one
+// uncoloured static frame.
+//
+// A caller that wants the terminal it is actually attached to calls Detect. A
+// caller assembling a Caps by hand sets at least Profile and Animate; the
+// fields whose zero really does mean "no restriction" are NoSync, FPS and
+// Dither, which impose nothing until set.
 type Caps struct {
 	Profile Profile
 	// TTY reports whether output is an interactive terminal.
@@ -63,29 +75,87 @@ type Caps struct {
 	// Reason explains why Animate is false, for logs and --json output.
 	Reason string
 	// NoSync disables synchronized output (mode 2026). Terminals ignore a
-	// mode they do not know, so this is only set when a probe got an explicit
-	// negative answer, or by ASCIIFX_SYNC=0.
+	// mode they do not know, so it stays false unless something says
+	// otherwise: ASCIIFX_SYNC=0, a probe that got an explicit negative
+	// answer, or a caller that sets it.
+	//
+	// Turning it off is one way. A probe that finds the mode supported will
+	// not clear a NoSync that was already true, because the caller who set it
+	// knows something the probe does not.
 	NoSync bool
-	// SyncKnown is true when a probe got a definite answer about mode 2026,
-	// so a caller can tell "not supported" from "never asked".
+	// SyncKnown is true when the terminal answered a probe about mode 2026.
+	// It separates an answer from never having asked; it does not say which
+	// answer. NoSync beside it may be the terminal's verdict, or the caller's
+	// own, or ASCIIFX_SYNC=0, because Play folds a probe into a Caps without
+	// overwriting a disable that was already there. A caller that needs the
+	// terminal's own verdict reads the Caps that Probe returned, before it is
+	// merged into anything.
 	SyncKnown bool
 	// FPS caps the tick rate. Nothing is capped when it is zero. Slower
 	// transports (SSH, tmux) get a lower cap because dropped frames look
 	// better than queued ones.
 	FPS int
 	// Dither stipples gradients when Profile is a palette. Zero is off.
+	//
+	// Detect resolves it for the profile it detected, so Play re-resolves it
+	// from DitherPref whenever Profile has since been changed; otherwise an
+	// explicit profile inherits a decision made for one that is no longer in
+	// play. Assigning any other value here is your answer and is used as
+	// given. The one case that cannot be told apart is assigning exactly the
+	// value Detect had already chosen — say so with SetDither.
 	Dither tint.Dither
 
 	// DitherPref is the dither the environment asked for, before Profile had
-	// its say. Detect resolves Dither for the profile it detected, so a caller
-	// that overrides the profile — `--profile 256` on a pipe, say — must
-	// re-resolve from this or it inherits a decision made for a profile that
-	// is no longer in play, and dithering silently stays off.
+	// its say: ASCIIFX_DITHER, or bayer8. It outlives the profile on purpose,
+	// so overriding Profile has something to resolve against. Setting it on a
+	// Caps you built yourself opts into the same resolution.
 	DitherPref tint.Dither
+
+	// ditherAuto is the value Detect wrote into Dither. Dither is re-resolved
+	// only while it still holds that value, so assigning a different one is
+	// honoured without needing SetDither. A Caps built by hand leaves both
+	// zero; re-resolving its zero DitherPref yields NoDither either way, so
+	// the comparison costs it nothing.
+	ditherAuto tint.Dither
+
+	// ditherSet settles the one case the comparison cannot: SetDither called
+	// with exactly the value Detect had already chosen.
+	ditherSet bool
 
 	// syncSet records that ASCIIFX_SYNC was given explicitly, so Probe cannot
 	// overwrite the user's answer.
 	syncSet bool
+}
+
+// mergeProbe folds a probe's answer into c. Disabling synchronized output is
+// monotonic: a probe may turn it off when the terminal says mode 2026 is not
+// supported, but an answer of "supported" is not grounds to overrule a caller
+// who had already disabled it. SyncKnown still records that the terminal
+// answered at all, which is all it claims: after this, NoSync may be the
+// terminal's verdict or the caller's own.
+func (c *Caps) mergeProbe(got Caps) {
+	if !got.SyncKnown {
+		return
+	}
+	c.NoSync = c.NoSync || got.NoSync
+	c.SyncKnown = true
+}
+
+// SetDither fixes the dither to render with. Assigning Dither directly does
+// the same thing, except when the value assigned is the one Detect had already
+// chosen; use this to say you mean it.
+func (c *Caps) SetDither(d tint.Dither) {
+	c.Dither, c.ditherSet = d, true
+}
+
+// dither is the dither to render with. Detect's own answer is re-resolved
+// against the current Profile, because the caller may have replaced the
+// profile that answer was made for. Anything the caller chose is used as-is.
+func (c Caps) dither() tint.Dither {
+	if c.ditherSet || c.Dither != c.ditherAuto {
+		return c.Dither
+	}
+	return DitherFor(c.Profile, c.DitherPref)
 }
 
 // Detect inspects the environment and output file. Every decision has an
@@ -93,6 +163,14 @@ type Caps struct {
 // static frame, ASCIIFX_FORCE_ANIMATION=1 animates even in CI or a pipe,
 // ASCIIFX_SYNC=0 disables mode 2026, ASCIIFX_DITHER=none|bayer4|bayer8 and
 // ASCIIFX_FPS=N tune rendering.
+//
+// NO_COLOR follows no-color.org: colour is dropped when the variable is
+// present and not an empty string, regardless of its value, so NO_COLOR=0
+// disables colour exactly as NO_COLOR=1 does while NO_COLOR= counts as unset.
+// It is read in one place, detectProfile, and only decides the profile. The
+// dither preference survives it deliberately -- see DitherPref -- so a caller
+// that overrides the profile afterwards gets the dither that profile implies
+// rather than one NO_COLOR had already thrown away.
 //
 // Detect never touches the terminal: it reads environment variables only, so
 // it is safe to call before deciding whether to animate. Use Probe to ask the
@@ -119,13 +197,14 @@ func detect(tty bool, env func(string) string) Caps {
 		c.syncSet = true
 		c.NoSync = v == "0" || v == "false"
 	}
-	if v := env("ASCIIFX_FPS"); v != "" {
-		var n int
-		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 && n <= 240 {
-			c.FPS = n
-		}
-	} else if tty {
+	// The transport cap first, so an ASCIIFX_FPS that is not a usable answer
+	// falls back to it instead of leaving playback uncapped, which is the
+	// opposite of what someone setting the variable at all could mean.
+	if tty {
 		c.FPS = transportFPS(env)
+	}
+	if n, ok := parseFPS(env("ASCIIFX_FPS")); ok {
+		c.FPS = n
 	}
 	d := tint.Bayer8
 	if v := env("ASCIIFX_DITHER"); v != "" {
@@ -133,12 +212,29 @@ func detect(tty bool, env func(string) string) Caps {
 			d = parsed
 		}
 	}
-	if set("NO_COLOR") {
-		d = tint.NoDither
-	}
+	// NO_COLOR deliberately does not clear d: it already forced Profile to
+	// NoColor, which is what DitherFor reads, and zeroing the preference too
+	// would leave an explicit `--profile 256` with no dither to fall back on.
 	c.DitherPref = d
-	c.Dither = DitherFor(c.Profile, d)
+	c.ditherAuto = DitherFor(c.Profile, d)
+	c.Dither = c.ditherAuto
 	return c
+}
+
+// MaxFPS is the highest tick rate this package will accept, and the ceiling
+// the CLI checks --fps against. Past it the terminal is the bottleneck, not
+// the run.
+const MaxFPS = 240
+
+// parseFPS reads a tick rate. It is deliberately strict: a plain positive
+// integer up to MaxFPS and nothing else, so "60fps", "0", "-1" and "1e3" are
+// not answers and the caller keeps whatever it had.
+func parseFPS(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 || n > MaxFPS {
+		return 0, false
+	}
+	return n, true
 }
 
 // transportFPS is the tick-rate cap for the link the terminal sits behind.
@@ -161,6 +257,9 @@ func detectProfile(env func(string) string) Profile {
 			return p
 		}
 	}
+	// Present and non-empty is the whole test, per no-color.org: NO_COLOR=0
+	// is still NO_COLOR, and NO_COLOR= is not set at all. This is the only
+	// place the variable is read.
 	if env("NO_COLOR") != "" || env("TERM") == "dumb" {
 		return NoColor
 	}
