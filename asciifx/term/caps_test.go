@@ -62,15 +62,52 @@ func TestDetectTransportAndRenderingPrefs(t *testing.T) {
 	}
 }
 
-// TestDetectZeroCapsKeepsTodayBehaviour pins the compatibility contract: a
-// caller that builds a Caps literal instead of calling Detect keeps animated
-// synchronized truecolour output.
-func TestDetectZeroCapsKeepsTodayBehaviour(t *testing.T) {
+// TestZeroCapsIsConservative pins the zero value field by field, and then
+// pins what Play actually does with it. The comment on Caps used to claim a
+// zero literal behaved like an animated truecolour terminal; it does not, and
+// the test that was here hid that by building its Renderer with a hardcoded
+// TrueColor instead of reading c.Profile.
+func TestZeroCapsIsConservative(t *testing.T) {
 	var c Caps
-	if c.NoSync || c.SyncKnown || c.FPS != 0 || c.Dither != tint.NoDither {
-		t.Fatalf("zero Caps is not inert: %+v", c)
+	for _, f := range []struct {
+		name      string
+		got, want any
+	}{
+		{"Profile", c.Profile, NoColor},
+		{"TTY", c.TTY, false},
+		{"Animate", c.Animate, false},
+		{"Reason", c.Reason, ""},
+		{"NoSync", c.NoSync, false},
+		{"SyncKnown", c.SyncKnown, false},
+		{"FPS", c.FPS, 0},
+		{"Dither", c.Dither, tint.NoDither},
+		{"DitherPref", c.DitherPref, tint.NoDither},
+	} {
+		if f.got != f.want {
+			t.Errorf("zero Caps: %s = %v, want %v", f.name, f.got, f.want)
+		}
 	}
-	ren := &Renderer{Profile: TrueColor, Sync: !c.NoSync, Dither: c.Dither}
+
+	// Play is handed the zero Caps untouched: Animate's zero is what sends it
+	// down the static branch, and Profile's zero is why that frame carries no
+	// colour at all.
+	out := playStatic(t, c)
+	if strings.Contains(out, "\x1b") {
+		t.Fatalf("a zero Caps produced escape sequences: %q", out)
+	}
+	if !strings.Contains(out, "\u2588") {
+		t.Fatalf("a zero Caps produced no frame: %q", out)
+	}
+}
+
+// TestZeroValuedFieldsImposeNothing is the half of the old claim that is true:
+// once a caller has set the two fields whose zero is a restriction, the rest
+// impose nothing until they are set.
+func TestZeroValuedFieldsImposeNothing(t *testing.T) {
+	c := Caps{Profile: TrueColor, Animate: true}
+
+	// NoSync's zero leaves synchronized output on.
+	ren := &Renderer{Profile: c.Profile, Sync: !c.NoSync, Dither: c.dither()}
 	b := cell.New(4, 1)
 	b.WriteString(0, 0, "test", tint.RGB(255, 0, 0))
 	first := ren.Frame(b)
@@ -78,7 +115,49 @@ func TestDetectZeroCapsKeepsTodayBehaviour(t *testing.T) {
 		t.Fatal("first frame wrote nothing")
 	}
 	if string(first[:len(syncStart)]) != syncStart {
-		t.Fatal("a zero Caps lost synchronized output")
+		t.Fatal("a zero NoSync lost synchronized output")
+	}
+	// FPS's zero caps nothing, and Dither's zero adds no stipple.
+	if got := playFPS(60, c.FPS); got != 60 {
+		t.Errorf("a zero FPS capped a 60 fps run to %d", got)
+	}
+	if got := c.dither(); got != tint.NoDither {
+		t.Errorf("a zero Dither resolved to %v", got)
+	}
+}
+
+// TestNoColorAnyNonEmptyValueDisablesColour pins the NO_COLOR contract, which
+// has one reader and one meaning. no-color.org asks for colour to be dropped
+// when the variable is present and not an empty string, regardless of its
+// value, so NO_COLOR=0 disables colour exactly as NO_COLOR=1 does and
+// NO_COLOR= counts as unset. It decides the profile and nothing else, and
+// DitherPref survives it so that an explicit profile afterwards gets the
+// dither that profile implies.
+func TestNoColorAnyNonEmptyValueDisablesColour(t *testing.T) {
+	for _, v := range []string{"1", "0", "false", "no", " ", "anything"} {
+		c := detect(true, env("NO_COLOR", v, "COLORTERM", "truecolor", "TERM", "xterm-256color"))
+		if c.Profile != NoColor {
+			t.Errorf("NO_COLOR=%q: Profile = %v, want none", v, c.Profile)
+		}
+		if c.Dither != tint.NoDither {
+			t.Errorf("NO_COLOR=%q: Dither = %v, want none", v, c.Dither)
+		}
+		if c.DitherPref != tint.Bayer8 {
+			t.Errorf("NO_COLOR=%q: DitherPref = %v, want bayer8 to survive for a later override", v, c.DitherPref)
+		}
+		c.Profile = ANSI256
+		if got := c.dither(); got != tint.Bayer8 {
+			t.Errorf("NO_COLOR=%q then Profile = ANSI256: dither = %v, want bayer8", v, got)
+		}
+	}
+	// An empty value is not a set one, and neither is an absent variable.
+	for _, c := range []Caps{
+		detect(true, env("NO_COLOR", "", "TERM", "xterm-256color")),
+		detect(true, env("TERM", "xterm-256color")),
+	} {
+		if c.Profile != ANSI256 {
+			t.Errorf("without NO_COLOR: Profile = %v, want 256", c.Profile)
+		}
 	}
 }
 
@@ -176,14 +255,20 @@ func flatRun(t *testing.T) *fx.Run {
 
 // playStatic runs the non-animated path, which encodes one frame with exactly
 // the profile and dither Play resolved.
+//
+// It refuses rather than clears an Animate it was not given: forcing the field
+// here would mean no caller could ever show that Animate is what sends Play
+// down this branch in the first place.
 func playStatic(t *testing.T, caps Caps) string {
 	t.Helper()
+	if caps.Animate {
+		t.Fatal("playStatic reads Play's static branch; pass a Caps with Animate false")
+	}
 	f, err := os.CreateTemp(t.TempDir(), "static")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	caps.Animate = false
 	if err := Play(context.Background(), flatRun(t), PlayOptions{Out: f, Caps: caps}); err != nil {
 		t.Fatal(err)
 	}
@@ -241,6 +326,7 @@ func TestProfileOverrideReresolvesDetectedDither(t *testing.T) {
 	// has asked for a palette profile.
 	caps := detect(true, env("COLORTERM", "truecolor", "TERM", "xterm-256color"))
 	caps.Profile = ANSI256
+	caps.Animate = false // one frame is enough to see the stipple
 	if n := len(paletteIndices(playStatic(t, caps))); n < 2 {
 		t.Fatalf("Play used %d palette entries after Caps.Profile = ANSI256; the dither did not come back", n)
 	}
@@ -276,6 +362,7 @@ func TestSetDitherOutranksReresolution(t *testing.T) {
 	if got := caps.dither(); got != tint.NoDither {
 		t.Fatalf("dither = %v after SetDither(none), want none", got)
 	}
+	caps.Animate = false
 	if n := len(paletteIndices(playStatic(t, caps))); n != 1 {
 		t.Fatalf("Play used %d palette entries after SetDither(none), want 1", n)
 	}
@@ -301,6 +388,7 @@ func TestDirectDitherAssignmentAfterDetectIsHonoured(t *testing.T) {
 	if got := off.dither(); got != tint.NoDither {
 		t.Fatalf("Dither = none assigned directly: dither = %v, want none", got)
 	}
+	off.Animate = false
 	if n := len(paletteIndices(playStatic(t, off))); n != 1 {
 		t.Fatalf("Play used %d palette entries after Dither = none, want 1", n)
 	}
@@ -316,6 +404,7 @@ func TestDirectDitherAssignmentAfterDetectIsHonoured(t *testing.T) {
 	if got := on.dither(); got != tint.Bayer4 {
 		t.Fatalf("Dither = bayer4 assigned directly: dither = %v, want bayer4", got)
 	}
+	on.Animate = false
 	if n := len(paletteIndices(playStatic(t, on))); n < 2 {
 		t.Fatalf("Play used %d palette entries after Dither = bayer4, want a stipple", n)
 	}
@@ -330,6 +419,7 @@ func TestDirectDitherAssignmentAfterDetectIsHonoured(t *testing.T) {
 	if got := back.dither(); got != tint.Bayer8 {
 		t.Fatalf("Dither = bayer8 assigned over ASCIIFX_DITHER=none: dither = %v, want bayer8", got)
 	}
+	back.Animate = false
 	if n := len(paletteIndices(playStatic(t, back))); n < 2 {
 		t.Fatalf("Play used %d palette entries after Dither = bayer8, want a stipple", n)
 	}
@@ -355,6 +445,7 @@ func TestSameValueDitherAssignmentNeedsSetDither(t *testing.T) {
 	if got := explicit.dither(); got != tint.NoDither {
 		t.Fatalf("SetDither(none): dither = %v, want none", got)
 	}
+	explicit.Animate = false
 	if n := len(paletteIndices(playStatic(t, explicit))); n != 1 {
 		t.Fatalf("Play used %d palette entries after SetDither(none), want 1", n)
 	}

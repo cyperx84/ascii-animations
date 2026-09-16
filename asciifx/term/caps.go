@@ -53,8 +53,19 @@ func DitherFor(p Profile, d tint.Dither) tint.Dither {
 }
 
 // Caps is what the output terminal can do and whether animating is wanted.
-// Every field's zero value means "no restriction", so a caller that builds a
-// Caps literal gets the same behaviour as an animated truecolour terminal.
+//
+// The zero value is conservative, not permissive. It is NoColor, not animated,
+// uncapped, undithered and with synchronized output left alone -- the safe
+// thing to send at a terminal nothing is known about, which is not the same as
+// an unrestricted one. Two of those are the opposite of "no restriction":
+// Profile's zero is NoColor because that is the first Profile constant, and
+// Animate's zero is false, so `Play(ctx, r, PlayOptions{})` prints one
+// uncoloured static frame.
+//
+// A caller that wants the terminal it is actually attached to calls Detect. A
+// caller assembling a Caps by hand sets at least Profile and Animate; the
+// fields whose zero really does mean "no restriction" are NoSync, FPS and
+// Dither, which impose nothing until set.
 type Caps struct {
 	Profile Profile
 	// TTY reports whether output is an interactive terminal.
@@ -153,6 +164,14 @@ func (c Caps) dither() tint.Dither {
 // ASCIIFX_SYNC=0 disables mode 2026, ASCIIFX_DITHER=none|bayer4|bayer8 and
 // ASCIIFX_FPS=N tune rendering.
 //
+// NO_COLOR follows no-color.org: colour is dropped when the variable is
+// present and not an empty string, regardless of its value, so NO_COLOR=0
+// disables colour exactly as NO_COLOR=1 does while NO_COLOR= counts as unset.
+// It is read in one place, detectProfile, and only decides the profile. The
+// dither preference survives it deliberately -- see DitherPref -- so a caller
+// that overrides the profile afterwards gets the dither that profile implies
+// rather than one NO_COLOR had already thrown away.
+//
 // Detect never touches the terminal: it reads environment variables only, so
 // it is safe to call before deciding whether to animate. Use Probe to ask the
 // terminal itself for the things the environment cannot answer.
@@ -238,6 +257,9 @@ func detectProfile(env func(string) string) Profile {
 			return p
 		}
 	}
+	// Present and non-empty is the whole test, per no-color.org: NO_COLOR=0
+	// is still NO_COLOR, and NO_COLOR= is not set at all. This is the only
+	// place the variable is read.
 	if env("NO_COLOR") != "" || env("TERM") == "dumb" {
 		return NoColor
 	}
