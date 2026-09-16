@@ -48,12 +48,13 @@ var goldenCases = []goldenCase{
 	// A mid-cycle frame and a width that fits the whole label, so the golden
 	// pins the tick-to-frame mapping and the glyph-plus-label layout together.
 	{name: "spinner-plain", args: []string{"render", "spinner", "--w", "16", "--h", "1", "--frame", "7", "--format", "plain", "--seed", "1", "-p", "style=dots"}},
-	{name: "fire-ansi-256", want: "38;5;", args: []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "256", "--seed", "1"}},
-	{name: "fire-ansi-16", want: "\x1b[0;", args: []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "16", "--seed", "1"}},
+	{name: "fire-ansi-256", want: "38;5;", args: []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "256", "--dither", "bayer8", "--seed", "1"}},
+	{name: "fire-ansi-256-nodither", want: "38;5;", args: []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "256", "--dither", "none", "--seed", "1"}},
+	{name: "fire-ansi-16", want: "\x1b[0;", args: []string{"render", "fire", "--w", "24", "--h", "6", "--frame", "45", "--format", "ansi", "--profile", "16", "--dither", "bayer8", "--seed", "1"}},
 	{name: "reveal-pattern-combinator", want: "███", args: []string{"render", "reveal", "--banner", "HI", "--w", "24", "--h", "8", "--frame", "18", "--format", "plain", "--seed", "1", "-p", "pattern=min(invert(center),wave)"}},
 	{name: "chain-mid", want: "███", args: []string{"render", "reveal", "--banner", "HI", "--w", "24", "--h", "8", "--frame", "30", "--format", "plain", "--seed", "1", "--then", "fire", "--for", "1s"}},
 	{name: "chain-final", want: "▀", args: []string{"render", "reveal", "--banner", "HI", "--w", "24", "--h", "8", "--frame", "-1", "--format", "plain", "--seed", "1", "--then", "fire", "--for", "1s"}},
-	{name: "chain-ansi-256", want: "38;5;", args: []string{"render", "reveal", "--banner", "HI", "--w", "20", "--h", "6", "--for", "500ms", "--then", "shine", "--for", "500ms", "--frame", "-1", "--format", "ansi", "--profile", "256", "--seed", "1"}},
+	{name: "chain-ansi-256", want: "38;5;", args: []string{"render", "reveal", "--banner", "HI", "--w", "20", "--h", "6", "--for", "500ms", "--then", "shine", "--for", "500ms", "--frame", "-1", "--format", "ansi", "--profile", "256", "--dither", "bayer8", "--seed", "1"}},
 	// The flagship filter case: the same chain as chain-final, with fire
 	// restricted to not(ink). Unfiltered, fire eats the banner (chain-final
 	// shows half-blocks where the letters were); filtered, the letters survive
