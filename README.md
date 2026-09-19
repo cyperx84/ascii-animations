@@ -330,7 +330,7 @@ From source:
 ```sh
 git clone https://github.com/cyperx84/ascii-animations
 cd ascii-animations
-make build && ./asciifx
+make build && ./bin/asciifx
 make test    # or: go test ./...
 ```
 

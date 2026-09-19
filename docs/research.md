@@ -144,7 +144,7 @@ No "Lottie for terminals" or cross-language animation spec exists.
 - **Assets:**
   - gunnargray-dev/unicode-animations has no repo license.
   - Scene .ans art belongs to the artists.
-- **This repo:** `pkg/banners` fonts are hand-drawn maps. Some carry figlet-font names (Doom, ANSI Shadow, Star Wars) but are not copied .flf data.
+- **This repo:** the banner fonts in `asciifx/fx/banner.go` (`block`, `slim`, `mini`) are hand-drawn glyph maps, not copied .flf data.
 
 ## 5. What makes galleries and libraries agent-friendly
 - **Discovery:**
