@@ -409,6 +409,26 @@ func TestNewDetectedHonoursReducedMotion(t *testing.T) {
 	}
 }
 
+// FromRunDetected is the same door for a run Lookup cannot name, so it needs
+// the same proof SetCaps actually got called.
+func TestFromRunDetectedSetsCaps(t *testing.T) {
+	spec, err := fx.Lookup("fire")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := fx.NewRun(spec, fx.Options{W: 8, H: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := FromRunDetected(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.capsSet {
+		t.Fatal("FromRunDetected did not call SetCaps")
+	}
+}
+
 // SetCaps cannot restart a chain, so it must not end one that should keep
 // running: a caller who sets caps from the first WindowSizeMsg would freeze
 // the effect for good.
