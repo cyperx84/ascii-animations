@@ -214,12 +214,21 @@ func intro() error {
 }
 ```
 
-**Bubble Tea v2**: `asciifx/teafx` is a component. `teafx.New("spinner", fx.Options{...})`, call its `Init`/`Update`/`View` from your model, and check `Done()` to move on from an intro. See `examples/bubbletea`.
+**Bubble Tea v2**: `asciifx/teafx` is a component. `teafx.New("spinner", fx.Options{...})`, call its `Init`/`Update`/`View` from your model, and check `Done()` to move on from an intro. Three calls are easy to miss and each one fixes a real bug:
+
+- `m.SetCaps(term.Detect(os.Stdout))` — the frame-rate cap and the static frame under CI, a pipe, `TERM=dumb` or `ASCIIFX_REDUCED_MOTION`. A component gets none of that otherwise.
+- `teafx.FromRun(run)` — the only way to play a `fx.Compose` chain, whose Spec is never registered.
+- `teafx.At(drawable, rect)` — required for *everything* composed onto a lipgloss `Canvas`, chrome included: `Canvas.Compose` hands each drawable the whole canvas, and a `Layer` ignores its own X/Y there.
+
+Five worked programs, simple to hard, in `examples/01-spinner` … `examples/05-dashboard`.
+
+**Linting your own art**: `asciifx/lint` is the `check` command as a package. `lint.String(art)` returns the same findings, so the check belongs in a test.
 
 **Any other language**: shell out to the CLI.
 - `asciifx play <effect> --inline` for a one-shot intro.
 - `asciifx cast <effect> > intro.cast` for a pre-baked asciicast v3 stream you replay.
 - `asciifx render ... --format ansi --frames ...` for pre-rendered frames you embed as data.
+- `asciifx svg <effect> > demo.svg` for an animated SVG: one self-contained file, no script and no font, so it plays in a README or any `<img>`.
 
 ## Non-negotiable rules (the engine enforces these; hand-rolled code must too)
 
