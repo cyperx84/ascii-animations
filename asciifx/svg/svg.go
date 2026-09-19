@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -108,6 +109,36 @@ func (o Options) quant(c tint.Color) tint.Color {
 // ErrNoFrames is returned when there is nothing to animate.
 var ErrNoFrames = errors.New("svg: no frames")
 
+// colourRe accepts what a colour may look like: a hex triple or quad, or a
+// bare CSS keyword. Anything else is rejected rather than escaped, because
+// these values land inside a <style> element where escaping is not enough to
+// make arbitrary text safe to read as CSS.
+var colourRe = regexp.MustCompile(`^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+(-[a-zA-Z]+)*)$`)
+
+// fontRe accepts a CSS font stack: families, quoted or bare, separated by
+// commas. The characters that could end an attribute or an element are not in
+// the set.
+var fontRe = regexp.MustCompile(`^[-a-zA-Z0-9 ,'_.]+$`)
+
+// validate rejects option strings that would change the shape of the
+// document rather than its appearance. Encode returns the error; it does not
+// silently substitute, because a caller who passed a theme colour from their
+// own config wants to hear that it was not one.
+func (o Options) validate() error {
+	for _, c := range []struct{ what, val string }{
+		{"background", o.Background},
+		{"foreground", o.Foreground},
+	} {
+		if !colourRe.MatchString(c.val) {
+			return fmt.Errorf("svg: %s %q is not a hex colour or a CSS colour keyword", c.what, c.val)
+		}
+	}
+	if !fontRe.MatchString(o.FontFamily) {
+		return fmt.Errorf("svg: font family %q has characters a CSS font stack cannot contain", o.FontFamily)
+	}
+	return nil
+}
+
 // Encode writes frames as one animated SVG document. Every frame must be the
 // same size, because a document has one viewBox; a frame of a different size
 // is an error rather than a silently clipped one.
@@ -116,6 +147,9 @@ func Encode(w io.Writer, frames []*cell.Buffer, o Options) error {
 		return ErrNoFrames
 	}
 	o.defaults()
+	if err := o.validate(); err != nil {
+		return err
+	}
 	cols, rows := frames[0].W, frames[0].H
 	for i, f := range frames {
 		if f.W != cols || f.H != rows {
@@ -127,8 +161,10 @@ func Encode(w io.Writer, frames []*cell.Buffer, o Options) error {
 	total := float64(len(frames)) / float64(o.FPS)
 
 	out := bufio.NewWriter(w)
-	fmt.Fprintf(out, `<svg xmlns="http://www.w3.org/2000/svg" width="%.0f" height="%.0f" viewBox="0 0 %.0f %.0f" font-family="%s" font-size="%.0fpx">`,
-		width, height, width, height, o.FontFamily, o.FontSize)
+	// Every number goes through num: rounding the font size but not the cell
+	// width it was derived from would draw 14px glyphs on an 8.1px grid.
+	fmt.Fprintf(out, `<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s" viewBox="0 0 %s %s" font-family="%s" font-size="%spx">`,
+		num(width), num(height), num(width), num(height), o.FontFamily, num(o.FontSize))
 	out.WriteByte('\n')
 	if o.Title != "" {
 		fmt.Fprintf(out, "<title>%s</title>\n", escape(o.Title))
@@ -263,7 +299,10 @@ func writeRun(out *bufio.Writer, s string, fg tint.Color, attr cell.Attr, o Opti
 		out.WriteString(` font-style="italic"`)
 	}
 	if attr&cell.Dim != 0 {
-		out.WriteString(` opacity="0.55"`)
+		// fill-opacity, not opacity: opacity applies to container and
+		// graphics elements, and a tspan is neither, so renderers are free to
+		// ignore it there.
+		out.WriteString(` fill-opacity="0.55"`)
 	}
 	if attr&cell.Underline != 0 {
 		out.WriteString(` text-decoration="underline"`)
@@ -356,6 +395,9 @@ func runeOf(c cell.Cell) rune {
 
 // num formats a coordinate as short as it can: SVG files are mostly numbers,
 // and two significant decimals of a pixel are below what any renderer shows.
+// num formats a number as short as it round-trips: an SVG file is mostly
+// numbers, and the trailing zeros of a fixed format are pure weight.
+//
 // fill is a colour as CSS, or the fallback when the cell had none.
 func fill(c tint.Color, fallback string) string {
 	if !c.Valid {

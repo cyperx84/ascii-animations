@@ -129,3 +129,27 @@ func stripANSI(s string) string {
 	}
 	return b.String()
 }
+
+// Pressing refresh must replace the poll timer, not add one. Six timers
+// running at once is the bug this tag exists to prevent, and it is invisible
+// on screen — the table just refreshes too often.
+func TestManualRefreshRetiresTheOldTimer(t *testing.T) {
+	m, err := newModel(animated())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := refreshMsg{gen: m.generation}
+	next, _ := m.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
+	got := next.(model)
+	if got.generation == m.generation {
+		t.Fatal("a manual refresh did not start a new timer chain")
+	}
+	// The timer scheduled before the keypress now belongs to a dead chain.
+	after, cmd := got.Update(stale)
+	if cmd != nil {
+		t.Fatal("a stale timer started another poll chain")
+	}
+	if after.(model).generation != got.generation {
+		t.Fatal("a stale timer refreshed the data")
+	}
+}

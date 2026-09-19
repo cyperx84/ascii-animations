@@ -58,8 +58,16 @@ var (
 	downStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff5555"))
 )
 
-// refreshMsg drives the automatic poll.
-type refreshMsg time.Time
+// refreshMsg drives the automatic poll. gen names the timer chain it belongs
+// to: a manual refresh starts a new one, and a message from the old chain is
+// dropped rather than starting a third. Without that, pressing space five
+// times leaves six timers running and the table polls six times as often as
+// refreshEvery says — the same "duplicate chains run at their sum" failure
+// teafx.TickMsg's tag exists to prevent.
+type refreshMsg struct {
+	time time.Time
+	gen  uint64
+}
 
 type node struct {
 	name    string
@@ -81,7 +89,7 @@ type model struct {
 
 	nodes []node
 	// generation seeds the fake data, so every refresh differs and every run
-	// of the program is identical.
+	// of the program is identical. It doubles as the timer chain's tag.
 	generation uint64
 }
 
@@ -128,11 +136,16 @@ func (m model) ambientRect() uv.Rectangle {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.ambient.Init(), m.spinner.Tick, refreshTick())
+	return tea.Batch(m.ambient.Init(), m.spinner.Tick, m.refreshTick())
 }
 
-func refreshTick() tea.Cmd {
-	return tea.Tick(refreshEvery, func(t time.Time) tea.Msg { return refreshMsg(t) })
+// refreshTick schedules the next automatic poll, tagged with the generation
+// that scheduled it.
+func (m model) refreshTick() tea.Cmd {
+	gen := m.generation
+	return tea.Tick(refreshEvery, func(t time.Time) tea.Msg {
+		return refreshMsg{time: t, gen: gen}
+	})
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -142,8 +155,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
-		case " ", "enter":
-			return m, tea.Batch(m.refresh(), refreshTick())
+		// Bubble Tea v2 names this key "space", not " ".
+		case "space", "enter":
+			// refresh bumps the generation, so the timer in flight is stale
+			// and the one scheduled here replaces it.
+			return m, tea.Batch(m.refresh(), m.refreshTick())
 		case "a":
 			if err := m.setAmbient((m.ambientIdx + 1) % len(ambients)); err != nil {
 				return m, tea.Quit
@@ -160,7 +176,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// than draw it at the wrong width.
 		m.reveal = nil
 	case refreshMsg:
-		return m, tea.Batch(m.refresh(), refreshTick())
+		if msg.gen != m.generation {
+			// A tick from a chain a manual refresh superseded.
+			return m, nil
+		}
+		return m, tea.Batch(m.refresh(), m.refreshTick())
 	}
 
 	var cmd tea.Cmd

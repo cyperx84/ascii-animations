@@ -128,10 +128,12 @@ func (m *Model) SetCaps(c term.Caps) {
 		return
 	}
 	m.caps, m.capsSet = c, true
-	// A new contract invalidates the ticks already in flight, so a model told
-	// to stop animating stops even if it was mid-chain.
-	m.tag++
 	if !c.Animate {
+		// Invalidate the ticks already in flight, so a model told to stop
+		// stops even mid-chain. Only on this branch: bumping the tag when
+		// motion is still wanted would kill the running chain and leave
+		// nothing to restart it, because SetCaps returns no command.
+		m.tag++
 		m.buf, _ = m.run.Seek(term.StaticTick(m.run))
 	}
 }
@@ -239,6 +241,13 @@ func (m *Model) SetSize(w, h int) {
 		return
 	}
 	m.buf = m.run.Current()
+	if m.static() {
+		// A still model has no ticks to redraw it, so the resize has to land
+		// on the frame it is showing. Seeking frame 0 here would strand it
+		// there: an ambient effect's frame 0 is often blank.
+		m.buf, _ = m.run.Seek(term.StaticTick(m.run))
+		return
+	}
 	if m.run.Tick() < 0 {
 		// Ambient runs rebuild from scratch; draw frame 0 so View is not blank.
 		m.buf, _ = m.run.Seek(0)

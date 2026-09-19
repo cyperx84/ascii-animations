@@ -4,9 +4,9 @@ What broke, chafed or was missing when this repo's own demo programs were writte
 its public API. Every entry names the file and line that caused it, so the next person can
 start at the code rather than at the story.
 
-Status: rounds 1-4 landed on `feat/fxdash-dogfood` — engine fixes, five demos,
-an SVG exporter, and a spinner that honours the terminal. Findings 2, 3, 4,
-6, 7, 8 and 9 are fixed; 1 and 5 are
+Status: rounds 1-5 landed on `feat/fxdash-dogfood` — engine fixes, five demos,
+an SVG exporter, a spinner that honours the terminal, and the review's own
+findings. Everything except 1 and 5 is fixed; those two are
 documented, not fixed. "What to do next" at the end is the ranked list.
 
 ## Method
@@ -160,6 +160,25 @@ under CI does no per-frame work at all.
 The lesson is about method, not about spinners: this is the bug the five
 headless tests could not have caught, because nothing in a test has an opinion
 about the terminal. Run the thing.
+
+### 10. What the review found that the demos did not
+
+A high-effort review of the whole diff, plus the tests written to confirm each
+finding. Every one is fixed on this branch.
+
+| | |
+|---|---|
+| `teafx.go` `SetSize` | a still model resized to frame 0, and an ambient effect's frame 0 is often blank — `matrix` renders nothing at all there. Under `ASCIIFX_REDUCED_MOTION`, resizing `examples/05-dashboard` blanked the panel for good. `Restart` already guarded this; `SetSize` did not. |
+| `teafx.go` `SetCaps` | bumped the tick tag unconditionally, so calling it mid-chain with `Animate` true killed the chain and returned no command to restart it: a silent permanent freeze for anyone who sets caps from the first `WindowSizeMsg`. It now invalidates only when it is stopping motion. |
+| `05-dashboard` refresh | every manual refresh started a second poll timer without retiring the first, so five keypresses left six timers polling at six times the rate. Tagged with the generation, the same trick `teafx.TickMsg` uses. |
+| `svg.Options` strings | `Background`, `Foreground` and `FontFamily` were interpolated into a `<style>` element unescaped. `--foreground '</style><script>…'` produced a document carrying a script. They are now validated and rejected, because escaping is not enough for text that will be read as CSS. |
+| `svg` font size | emitted at `%.0f` while the cell grid was derived from the unrounded value, so `--font-size 13.5` drew 14px glyphs on an 8.1px grid and every row drifted. |
+| `svg` dim cells | `opacity` on a `<tspan>`, which the spec leaves renderers free to ignore. `fill-opacity` is the attribute that applies. |
+
+And one the review did not find, which the test written for its finding did:
+**`examples/05-dashboard` matched the space key as `" "`, but Bubble Tea v2
+names it `"space"`** — the manual refresh key had never worked, and only the
+6-second timer made it look like it did.
 
 ## What the demos cover
 

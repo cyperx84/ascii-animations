@@ -356,3 +356,44 @@ func TestCapsChooseTheColourProfileOfTheView(t *testing.T) {
 		t.Fatalf("NoColor view still carries truecolor sequences: %q", plain)
 	}
 }
+
+// A still model has no ticks to redraw it, so a resize has to leave it on the
+// frame it was showing. Frame 0 of an ambient effect is often blank, which is
+// what made this worth a test.
+func TestResizeKeepsTheStaticFrame(t *testing.T) {
+	m, err := New("matrix", fx.Options{W: 20, H: 8, Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.SetCaps(term.Caps{Profile: term.TrueColor})
+	m.SetSize(30, 10)
+	if got := m.Run().Tick(); got != term.StaticTick(m.Run()) {
+		t.Fatalf("after resize the run is at tick %d, want the static tick %d", got, term.StaticTick(m.Run()))
+	}
+	if strings.TrimSpace(m.buf.Plain()) == "" {
+		t.Fatal("resize left a still model on a blank frame")
+	}
+}
+
+// SetCaps cannot restart a chain, so it must not end one that should keep
+// running: a caller who sets caps from the first WindowSizeMsg would freeze
+// the effect for good.
+func TestSetCapsDoesNotKillARunningChain(t *testing.T) {
+	m, err := New("fire", fx.Options{W: 16, H: 6, Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Init() == nil {
+		t.Fatal("Init should start ticking")
+	}
+	// The tick already in flight carries the tag from Init.
+	inFlight := TickMsg{ID: m.ID(), tag: m.tag}
+	m.SetCaps(term.Caps{Profile: term.TrueColor, Animate: true, FPS: 15})
+	next, cmd := m.Update(inFlight)
+	if cmd == nil {
+		t.Fatal("SetCaps orphaned the running tick chain")
+	}
+	if next.buf == nil {
+		t.Fatal("no frame after the tick")
+	}
+}

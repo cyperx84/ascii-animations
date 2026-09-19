@@ -180,3 +180,61 @@ func itoa(i int) string {
 	}
 	return string(d)
 }
+
+// The colour and font options land inside a <style> element, where escaping
+// is not enough: a value that reads as CSS can close the element. They are
+// rejected rather than sanitised, so the caller hears about it.
+func TestHostileOptionsAreRejected(t *testing.T) {
+	b := cell.New(2, 1)
+	for _, o := range []svg.Options{
+		{Foreground: "</style><script>alert(1)</script><style>"},
+		{Background: "red;}@import url(evil)"},
+		{FontFamily: `monospace"><script>x</script>`},
+		{Foreground: "#00ff00 ;}"},
+	} {
+		if err := svg.Encode(io.Discard, []*cell.Buffer{b}, o); err == nil {
+			t.Errorf("accepted %+v", o)
+		}
+	}
+}
+
+func TestOrdinaryColoursAreAccepted(t *testing.T) {
+	b := cell.New(2, 1)
+	for _, o := range []svg.Options{
+		{Foreground: "#fff", Background: "none"},
+		{Foreground: "#c9d1d9", Background: "#0d1117"},
+		{Foreground: "rebeccapurple", Background: "transparent"},
+		{FontFamily: "ui-monospace,SFMono-Regular,'DejaVu Sans Mono',monospace"},
+	} {
+		if err := svg.Encode(io.Discard, []*cell.Buffer{b}, o); err != nil {
+			t.Errorf("rejected %+v: %v", o, err)
+		}
+	}
+}
+
+// The glyphs are laid out on a grid derived from the font size, so the font
+// size in the document has to be the one the grid was derived from.
+func TestFontSizeMatchesTheCellGrid(t *testing.T) {
+	b := cell.New(2, 1)
+	var buf bytes.Buffer
+	if err := svg.Encode(&buf, []*cell.Buffer{b}, svg.Options{FontSize: 13.5}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `font-size="13.5px"`) {
+		t.Errorf("font size was rounded away from the grid it sized:\n%s", buf.String()[:200])
+	}
+}
+
+// opacity is ignored on a tspan by renderers that follow the spec, so a dim
+// cell has to use fill-opacity or it exports at full brightness.
+func TestDimCellsUseFillOpacity(t *testing.T) {
+	b := cell.New(1, 1)
+	b.Set(0, 0, cell.Cell{Rune: 'x', FG: tint.MustHex("#ffffff"), Attr: cell.Dim})
+	var buf bytes.Buffer
+	if err := svg.Encode(&buf, []*cell.Buffer{b}, svg.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `fill-opacity="0.55"`) {
+		t.Errorf("dim cell is not dimmed:\n%s", buf.String())
+	}
+}
