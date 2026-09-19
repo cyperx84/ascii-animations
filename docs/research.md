@@ -309,9 +309,10 @@ Three structural mismatches, each verified rather than assumed:
   and SSH (`shouldQuerySynchronizedOutput` in `tea.go`). Independent corroboration of the §6 decision
   to make asciifx's own probe opt-in with an override.
 - **A pty with no terminal emulator cannot exercise a Bubble Tea v2 program**: nothing answers the
-  capability probe, so the program reads the test's own keystrokes as the reply. The showcase is
-  verified by driving the model directly in `pkg/ui/ui_test.go`, and by running the binary in a pty
-  with `TERM_PROGRAM=Apple_Terminal` (which suppresses the probe) and a pty size set with `stty`.
+  capability probe, so the program reads the test's own keystrokes as the reply. The showcase (since
+  retired) was verified by driving the model directly in `pkg/ui/ui_test.go`, and by running the
+  binary in a pty with `TERM_PROGRAM=Apple_Terminal` (which suppresses the probe) and a pty size set
+  with `stty`.
 
 ### Still declined
 
