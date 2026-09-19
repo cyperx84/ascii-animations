@@ -24,3 +24,10 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+
+# Demo binaries, named after their example directory
+/01-spinner
+/02-intro
+/03-chain
+/04-panels
+/05-dashboard

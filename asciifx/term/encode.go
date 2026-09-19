@@ -120,6 +120,13 @@ func runeOf(c cell.Cell) rune {
 // use ANSIWith to dither instead.
 func ANSI(b *cell.Buffer, p Profile) string { return ANSIWith(b, p, tint.NoDither) }
 
+// ANSICaps is ANSI rendered the way c says to render: c's profile, and the
+// dither c resolves to for that profile. It is what Play encodes its static
+// frame with, exported because a caller holding a Caps should not have to
+// re-derive the dither rule to match — Caps.Dither alone is not the answer
+// when the profile has been changed since Detect chose it.
+func ANSICaps(b *cell.Buffer, c Caps) string { return ANSIWith(b, c.Profile, c.dither()) }
+
 // ANSIWith is ANSI with an explicit dither pattern. Dithering only affects
 // the 16- and 256-colour profiles.
 func ANSIWith(b *cell.Buffer, p Profile, d tint.Dither) string {

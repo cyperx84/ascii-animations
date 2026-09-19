@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="312" height="43.2" viewBox="0 0 312 43.2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="16px">
+<title>asciifx spinner</title>
+<style>
+.f{opacity:0;animation:2.0667s infinite steps(1,end)}
+text{white-space:pre;fill:#c9d1d9;dominant-baseline:text-before-edge}
+.f0{animation-name:k0}@keyframes k0{0%{opacity:1}3.2258%{opacity:0}}
+.f1{animation-name:k1}@keyframes k1{3.2258%{opacity:1}6.4516%{opacity:0}}
+.f2{animation-name:k2}@keyframes k2{6.4516%{opacity:1}9.6774%{opacity:0}}
+.f3{animation-name:k3}@keyframes k3{9.6774%{opacity:1}12.9032%{opacity:0}}
+.f4{animation-name:k4}@keyframes k4{12.9032%{opacity:1}16.129%{opacity:0}}
+.f5{animation-name:k5}@keyframes k5{16.129%{opacity:1}19.3548%{opacity:0}}
+.f6{animation-name:k6}@keyframes k6{19.3548%{opacity:1}22.5806%{opacity:0}}
+.f7{animation-name:k7}@keyframes k7{22.5806%{opacity:1}25.8065%{opacity:0}}
+.f8{animation-name:k8}@keyframes k8{25.8065%{opacity:1}29.0323%{opacity:0}}
+.f9{animation-name:k9}@keyframes k9{29.0323%{opacity:1}32.2581%{opacity:0}}
+.f10{animation-name:k10}@keyframes k10{32.2581%{opacity:1}35.4839%{opacity:0}}
+.f11{animation-name:k11}@keyframes k11{35.4839%{opacity:1}38.7097%{opacity:0}}
+.f12{animation-name:k12}@keyframes k12{38.7097%{opacity:1}41.9355%{opacity:0}}
+.f13{animation-name:k13}@keyframes k13{41.9355%{opacity:1}45.1613%{opacity:0}}
+.f14{animation-name:k14}@keyframes k14{45.1613%{opacity:1}48.3871%{opacity:0}}
+.f15{animation-name:k15}@keyframes k15{48.3871%{opacity:1}51.6129%{opacity:0}}
+.f16{animation-name:k16}@keyframes k16{51.6129%{opacity:1}54.8387%{opacity:0}}
+.f17{animation-name:k17}@keyframes k17{54.8387%{opacity:1}58.0645%{opacity:0}}
+.f18{animation-name:k18}@keyframes k18{58.0645%{opacity:1}61.2903%{opacity:0}}
+.f19{animation-name:k19}@keyframes k19{61.2903%{opacity:1}64.5161%{opacity:0}}
+.f20{animation-name:k20}@keyframes k20{64.5161%{opacity:1}67.7419%{opacity:0}}
+.f21{animation-name:k21}@keyframes k21{67.7419%{opacity:1}70.9677%{opacity:0}}
+.f22{animation-name:k22}@keyframes k22{70.9677%{opacity:1}74.1935%{opacity:0}}
+.f23{animation-name:k23}@keyframes k23{74.1935%{opacity:1}77.4194%{opacity:0}}
+.f24{animation-name:k24}@keyframes k24{77.4194%{opacity:1}80.6452%{opacity:0}}
+.f25{animation-name:k25}@keyframes k25{80.6452%{opacity:1}83.871%{opacity:0}}
+.f26{animation-name:k26}@keyframes k26{83.871%{opacity:1}87.0968%{opacity:0}}
+.f27{animation-name:k27}@keyframes k27{87.0968%{opacity:1}90.3226%{opacity:0}}
+.f28{animation-name:k28}@keyframes k28{90.3226%{opacity:1}93.5484%{opacity:0}}
+.f29{animation-name:k29}@keyframes k29{93.5484%{opacity:1}96.7742%{opacity:0}}
+.f30{animation-name:k30}@keyframes k30{96.7742%{opacity:1}100%{opacity:0}}
+</style>
+<rect width="100%" height="100%" fill="#0d1117"/>
+<g class="f f0">
+<text x="12" y="12"><tspan x="12" fill="#6f6f7a">⠋</tspan><tspan x="31.2" fill="#a6a6bc">b</tspan><tspan fill="#a6b1c8">uilding the world</tspan></text>
+</g>
+<g class="f f1">
+<text x="12" y="12"><tspan x="12" fill="#6f6f7a">⠋</tspan><tspan x="31.2" fill="#9b9bb1">b</tspan><tspan fill="#a6a6bc">u</tspan><tspan fill="#a6b1c8">ilding the world</tspan></text>
+</g>
+<g class="f f2">
+<text x="12" y="12"><tspan x="12" fill="#6f6f7a">⠙</tspan><tspan x="31.2" fill="#85909b">b</tspan><tspan fill="#9b9bb1">u</tspan><tspan fill="#a6a6bc">i</tspan><tspan fill="#a6b1c8">lding the world</tspan></text>
+</g>
+<g class="f f3">
+<text x="12" y="12"><tspan x="12" fill="#6f7a85">⠹</tspan><tspan x="31.2" fill="#859090">b</tspan><tspan fill="#90909b">u</tspan><tspan fill="#9b9bb1">i</tspan><tspan fill="#9ba6bc">l</tspan><tspan fill="#a6b1c8">ding the world</tspan></text>
+</g>
+<g class="f f4">
+<text x="12" y="12"><tspan x="12" fill="#6f7a85">⠸</tspan><tspan x="31.2" fill="#909ba6">b</tspan><tspan fill="#90909b">ui</tspan><tspan fill="#9b9bb1">l</tspan><tspan fill="#a6a6bc">d</tspan><tspan fill="#a6b1c8">ing the world</tspan></text>
+</g>
+<g class="f f5">
+<text x="12" y="12"><tspan x="12" fill="#6f7a85">⠼</tspan><tspan x="31.2" fill="#9ba6bc">b</tspan><tspan fill="#9b9bb1">u</tspan><tspan fill="#9090a6">il</tspan><tspan fill="#9b9bb1">d</tspan><tspan fill="#a6a6bc">i</tspan><tspan fill="#a6b1c8">ng the world</tspan></text>
+</g>
+<g class="f f6">
+<text x="12" y="12"><tspan x="12" fill="#7a7a85">⠴</tspan><tspan x="31.2" fill="#a6b1c8">b</tspan><tspan fill="#a6a6bc">u</tspan><tspan fill="#9ba6b1">i</tspan><tspan fill="#909ba6">ld</tspan><tspan fill="#9b9bb1">i</tspan><tspan fill="#a6a6bc">n</tspan><tspan fill="#a6b1c8">g the world</tspan></text>
+</g>
+<g class="f f7">
+<text x="12" y="12"><tspan x="12" fill="#7a7a90">⠴</tspan><tspan x="31.2" fill="#a6b1c8">bu</tspan><tspan fill="#a6a6bc">i</tspan><tspan fill="#9ba6bc">l</tspan><tspan fill="#9b9bb1">d</tspan><tspan fill="#9b9ba6">i</tspan><tspan fill="#9ba6b1">n</tspan><tspan fill="#a6a6bc">g</tspan><tspan fill="#a6b1c8"> the world</tspan></text>
+</g>
+<g class="f f8">
+<text x="12" y="12"><tspan x="12" fill="#7a8590">⠦</tspan><tspan x="31.2" fill="#a6b1c8">bui</tspan><tspan fill="#a6a6c8">l</tspan><tspan fill="#9ba6bc">d</tspan><tspan fill="#9ba6b1">in</tspan><tspan fill="#9ba6bc">g</tspan><tspan fill="#a6b1c8"> the world</tspan></text>
+</g>
+<g class="f f9">
+<text x="12" y="12"><tspan x="12" fill="#7a8590">⠧</tspan><tspan x="31.2" fill="#a6b1c8">buil</tspan><tspan fill="#a6a6c8">d</tspan><tspan fill="#a6a6bc">i</tspan><tspan fill="#9ba6bc">n</tspan><tspan fill="#9ba6b1">g</tspan><tspan fill="#a6b1c8"> the world</tspan></text>
+</g>
+<g class="f f10">
+<text x="12" y="12"><tspan x="12" fill="#7a8590">⠇</tspan><tspan x="31.2" fill="#a6b1c8">buildi</tspan><tspan fill="#a6a6bc">n</tspan><tspan fill="#9ba6bc">g</tspan><tspan x="117.6" fill="#9bb1bc">t</tspan><tspan fill="#a6b1c8">he world</tspan></text>
+</g>
+<g class="f f11">
+<text x="12" y="12"><tspan x="12" fill="#7a8590">⠏</tspan><tspan x="31.2" fill="#a6b1c8">building </tspan><tspan fill="#9bb1bc">t</tspan><tspan fill="#a6b1c8">he world</tspan></text>
+</g>
+<g class="f f12">
+<text x="12" y="12"><tspan x="12" fill="#85859b">⠋</tspan><tspan x="31.2" fill="#a6b1c8">building th</tspan><tspan fill="#a6bcd3">e</tspan><tspan fill="#a6b1c8"> world</tspan></text>
+</g>
+<g class="f f13">
+<text x="12" y="12"><tspan x="12" fill="#85909b">⠋</tspan><tspan x="31.2" fill="#a6b1c8">building th</tspan><tspan fill="#a6b1d3">e</tspan><tspan x="156" fill="#a6bcd3">w</tspan><tspan fill="#a6b1d3">o</tspan><tspan fill="#a6b1c8">rld</tspan></text>
+</g>
+<g class="f f14">
+<text x="12" y="12"><tspan x="12" fill="#85909b">⠙</tspan><tspan x="31.2" fill="#a6b1c8">building the </tspan><tspan fill="#a6bcd3">w</tspan><tspan fill="#b1bcd3">o</tspan><tspan fill="#a6bcd3">r</tspan><tspan fill="#a6b1c8">ld</tspan></text>
+</g>
+<g class="f f15">
+<text x="12" y="12"><tspan x="12" fill="#8590a6">⠹</tspan><tspan x="31.2" fill="#a6b1c8">building the </tspan><tspan fill="#a6bcd3">w</tspan><tspan fill="#b1c8de">or</tspan><tspan fill="#b1bcd3">l</tspan><tspan fill="#a6b1c8">d</tspan></text>
+</g>
+<g class="f f16">
+<text x="12" y="12"><tspan x="12" fill="#8590a6">⠸</tspan><tspan x="31.2" fill="#a6b1c8">building the w</tspan><tspan fill="#b1bcd3">o</tspan><tspan fill="#b1d3de">rl</tspan><tspan fill="#b1c8d3">d</tspan></text>
+</g>
+<g class="f f17">
+<text x="12" y="12"><tspan x="12" fill="#8590a6">⠼</tspan><tspan x="31.2" fill="#a6b1c8">building the wo</tspan><tspan fill="#b1c8d3">r</tspan><tspan fill="#bcd3de">ld</tspan></text>
+</g>
+<g class="f f18">
+<text x="12" y="12"><tspan x="12" fill="#859bb1">⠴</tspan><tspan x="31.2" fill="#a6b1c8">building the wor</tspan><tspan fill="#b1c8d3">l</tspan><tspan fill="#bcd3de">d</tspan></text>
+</g>
+<g class="f f19">
+<text x="12" y="12"><tspan x="12" fill="#859bb1">⠴</tspan><tspan x="31.2" fill="#a6b1c8">building the worl</tspan><tspan fill="#b1c8d3">d</tspan></text>
+</g>
+<g class="f f20">
+<text x="12" y="12"><tspan x="12" fill="#859bb1">⠦</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f21">
+<text x="12" y="12"><tspan x="12" fill="#909bbc">⠧</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f22">
+<text x="12" y="12"><tspan x="12" fill="#90a6bc">⠇</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f23">
+<text x="12" y="12"><tspan x="12" fill="#90a6bc">⠏</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f24">
+<text x="12" y="12"><tspan x="12" fill="#90a6c8">⠋</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f25">
+<text x="12" y="12"><tspan x="12" fill="#90a6c8">⠋</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f26">
+<text x="12" y="12"><tspan x="12" fill="#90b1c8">⠙</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f27">
+<text x="12" y="12"><tspan x="12" fill="#90b1c8">⠹</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f28">
+<text x="12" y="12"><tspan x="12" fill="#9bb1c8">⠸</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f29">
+<text x="12" y="12"><tspan x="12" fill="#9bbcd3">⠼</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+<g class="f f30">
+<text x="12" y="12"><tspan x="12" fill="#9bbcd3">⠴</tspan><tspan x="31.2" fill="#a6b1c8">building the world</tspan></text>
+</g>
+</svg>
