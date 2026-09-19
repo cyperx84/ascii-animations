@@ -223,7 +223,17 @@ Ranked by what a consumer hits first, not by what is interesting to build.
 5. ~~**`showcase` and `pkg/` still share no code with the engine**~~ Retired
    rather than ported, 2026-09-19. See finding 1.
 
-6. **Distribution, not ergonomics, is what the project is short of.** This was
+6. **What the retirement cost, recorded so nobody rediscovers it as a bug.**
+   Deleting `pkg/` took surface with it that `asciifx/` does not replace:
+   banner fonts went from 12 to 3, spinner styles from 28 to 14 (the whole
+   emoji category is gone, which is the right call for animated regions
+   anyway), and "export this animation as a standalone Go program" has no
+   successor at all. None of it was reachable from the engine, so no
+   documented `asciifx` feature regressed — but if any of the three is
+   wanted back, it is in the history and it would now be written against
+   `fx.Banner`, `asciifx/spinner` and the CLI rather than against `pkg/`.
+
+7. **Distribution, not ergonomics, is what the project is short of.** This was
    missed for a long time while the code got better: there were no tags at
    all, so nothing was installable by version and pkg.go.dev had nothing to
    render, and the repository description still called the project a showcase
