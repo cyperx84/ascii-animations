@@ -375,6 +375,40 @@ func TestResizeKeepsTheStaticFrame(t *testing.T) {
 	}
 }
 
+// NewDetected exists so a caller who never heard of SetCaps still gets the
+// terminal contract; if it forgot to call SetCaps under the hood this would
+// silently regress to the pre-detection behaviour New alone gives.
+func TestNewDetectedSetsCaps(t *testing.T) {
+	m, err := NewDetected("fire", fx.Options{W: 8, H: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.capsSet {
+		t.Fatal("NewDetected did not call SetCaps")
+	}
+}
+
+// ASCIIFX_REDUCED_MOTION is the override a script sets to prove NewDetected
+// really runs Detect against the live environment rather than a fixed Caps.
+func TestNewDetectedHonoursReducedMotion(t *testing.T) {
+	t.Setenv("ASCIIFX_REDUCED_MOTION", "1")
+	opts := fx.Options{W: 12, H: 3, Seed: 1, Content: fx.Text("HELLO", tint.None)}
+	m, err := NewDetected("reveal", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd := m.Init(); cmd != nil {
+		t.Fatal("reduced motion should start no tick chain")
+	}
+	want, err := m.Run().Seek(term.StaticTick(m.Run()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.buf.Plain(); got != want.Plain() {
+		t.Fatalf("frame is not term.StaticTick's\n got:\n%s\nwant:\n%s", got, want.Plain())
+	}
+}
+
 // SetCaps cannot restart a chain, so it must not end one that should keep
 // running: a caller who sets caps from the first WindowSizeMsg would freeze
 // the effect for good.
