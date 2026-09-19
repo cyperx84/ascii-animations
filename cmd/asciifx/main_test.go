@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cyperx84/ascii-animations/asciifx/lint"
 )
 
 func runCLI(t *testing.T, stdin string, args ...string) (code int, stdout, stderr string) {
@@ -101,7 +103,7 @@ func TestCheckExitCodes(t *testing.T) {
 		}
 	}
 	code, out, _ = runCLI(t, "", "check", "--json", bad)
-	var res checkResult
+	var res lint.Result
 	if err := json.Unmarshal([]byte(out), &res); err != nil || code != exitIssues || res.OK || res.Frames != 2 {
 		t.Fatalf("json check: exit %d, %+v, %v", code, res, err)
 	}
