@@ -214,6 +214,29 @@ Examples:
 			run: cmdCast,
 		},
 		{
+			name:    "svg",
+			summary: "Export an animated SVG, for a README or anywhere else that takes an image.",
+			usage:   "asciifx svg <effect> [--seconds 3] > out.svg",
+			details: `Flags:
+  --seconds S         length (default: the whole effect if finite, 3s if it loops)
+  --font-size PX      font size in pixels (default 16)
+  --padding PX        padding around the frame (default 12)
+  --background COLOR  background colour, or none for transparent (default #0d1117)
+  --foreground COLOR  colour of cells the effect left uncoloured (default #c9d1d9)
+
+The document animates itself with CSS keyframes and carries no script, no
+font and no external reference, so it plays inside an <img> tag. Keep it
+short and small: every frame is in the file, so seconds and size both cost
+bytes.
+
+` + runFlagsHelp + `
+Examples:
+  asciifx svg fire --w 60 --h 14 --seconds 2 > fire.svg
+  asciifx svg reveal --banner HELLO --then fire --for 1s --filter 'not(ink)' > intro.svg
+`,
+			run: cmdSVG,
+		},
+		{
 			name:    "version",
 			summary: "Print the version.",
 			usage:   "asciifx version [--json]",
