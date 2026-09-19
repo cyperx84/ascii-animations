@@ -375,6 +375,93 @@ func TestResizeKeepsTheStaticFrame(t *testing.T) {
 	}
 }
 
+// NewDetected exists so a caller who never heard of SetCaps still gets the
+// terminal contract; if it forgot to call SetCaps under the hood this would
+// silently regress to the pre-detection behaviour New alone gives.
+func TestNewDetectedSetsCaps(t *testing.T) {
+	// Both variables, every time: Detect resolves them in one switch, so a
+	// test that sets only the one it cares about passes or fails according to
+	// what the developer happens to have exported.
+	t.Setenv("ASCIIFX_FORCE_ANIMATION", "")
+	t.Setenv("ASCIIFX_REDUCED_MOTION", "1")
+	m, err := NewDetected("fire", fx.Options{W: 8, H: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd := m.Init(); cmd != nil {
+		t.Fatal("NewDetected did not apply the environment's Caps")
+	}
+}
+
+// ASCIIFX_REDUCED_MOTION is the override a script sets to prove NewDetected
+// really runs Detect against the live environment rather than a fixed Caps.
+// The test needs both directions to mean anything. Under `go test` stdout is
+// already not a terminal, so a NewDetected that ignored the environment
+// entirely would pass a reduced-motion-only assertion: the model would be
+// static for the wrong reason. Forcing animation first is the control that
+// proves the environment is what NewDetected is reading.
+func TestNewDetectedReadsTheEnvironmentBothWays(t *testing.T) {
+	opts := func() fx.Options {
+		return fx.Options{W: 12, H: 3, Seed: 1, Content: fx.Text("HELLO", tint.None)}
+	}
+
+	t.Run("forced animation ticks", func(t *testing.T) {
+		t.Setenv("ASCIIFX_REDUCED_MOTION", "")
+		t.Setenv("ASCIIFX_FORCE_ANIMATION", "1")
+		m, err := NewDetected("reveal", opts())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Init() == nil {
+			t.Fatal("ASCIIFX_FORCE_ANIMATION=1 should animate even with stdout redirected")
+		}
+	})
+
+	t.Run("reduced motion stops", func(t *testing.T) {
+		// ASCIIFX_FORCE_ANIMATION outranks reduced motion in Detect's switch,
+		// so it has to be cleared or this test reports the developer's shell
+		// rather than the code.
+		t.Setenv("ASCIIFX_FORCE_ANIMATION", "")
+		t.Setenv("ASCIIFX_REDUCED_MOTION", "1")
+		m, err := NewDetected("reveal", opts())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cmd := m.Init(); cmd != nil {
+			t.Fatal("reduced motion should start no tick chain")
+		}
+		want, err := m.Run().Seek(term.StaticTick(m.Run()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := m.buf.Plain(); got != want.Plain() {
+			t.Fatalf("frame is not term.StaticTick's\n got:\n%s\nwant:\n%s", got, want.Plain())
+		}
+	})
+}
+
+// FromRunDetected is the same door for a run Lookup cannot name, so it needs
+// the same proof SetCaps actually got called.
+func TestFromRunDetectedSetsCaps(t *testing.T) {
+	t.Setenv("ASCIIFX_FORCE_ANIMATION", "")
+	t.Setenv("ASCIIFX_REDUCED_MOTION", "1")
+	spec, err := fx.Lookup("fire")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := fx.NewRun(spec, fx.Options{W: 8, H: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := FromRunDetected(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd := m.Init(); cmd != nil {
+		t.Fatal("FromRunDetected did not apply the environment's Caps")
+	}
+}
+
 // SetCaps cannot restart a chain, so it must not end one that should keep
 // running: a caller who sets caps from the first WindowSizeMsg would freeze
 // the effect for good.

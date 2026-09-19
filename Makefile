@@ -1,9 +1,10 @@
 .PHONY: build install clean run
 
-BINARY := showcase
-CMD := ./cmd/showcase
+BINARY := bin/asciifx
+CMD := ./cmd/asciifx
 
 build:
+	mkdir -p bin
 	go build -o $(BINARY) $(CMD)
 
 install:
@@ -13,8 +14,7 @@ run: build
 	./$(BINARY)
 
 clean:
-	rm -f $(BINARY)
-	rm -rf exported/
+	rm -rf bin
 
 lint:
 	go vet ./...

@@ -1,6 +1,5 @@
 # Binaries
 /ascii-animations
-/showcase
 /bubbletea
 *.exe
 *.dll
@@ -9,7 +8,6 @@
 
 # Build output
 /bin/
-exported/
 
 # Vendor (if used)
 vendor/

@@ -323,7 +323,6 @@ restore. For any other language, shell out to `asciifx play`, `cast` or `render`
 
 ```sh
 go install github.com/cyperx84/ascii-animations/cmd/asciifx@latest   # the toolkit
-go install github.com/cyperx84/ascii-animations/cmd/showcase@latest  # the demo TUI
 ```
 
 From source:
@@ -331,7 +330,7 @@ From source:
 ```sh
 git clone https://github.com/cyperx84/ascii-animations
 cd ascii-animations
-make build && ./showcase
+make build && ./bin/asciifx
 make test    # or: go test ./...
 ```
 
@@ -343,28 +342,6 @@ regression from shipping silently:
 go test ./cmd/asciifx -run Golden              # compare
 go test ./cmd/asciifx -run Golden -update      # regenerate, then read the diff
 ```
-
-## Showcase
-
-The original interactive TUI, on Bubble Tea v2 and Lip Gloss v2.
-
-```
-┌─────────────────────────────────────┐
-│   ASCII Animations Showcase         │
-│                                     │
-│   ▸ 🎯 Spinners (28)                │
-│     🔥 Full-Screen Effects (8)      │
-│     📝 Text Banners (60)            │
-│     🎨 Splash Screens (6)           │
-│     🌈 Color Showcase (3)           │
-│     📦 Export (1)                   │
-│                                     │
-│   j/k ↑↓ navigate · enter select    │
-└─────────────────────────────────────┘
-```
-
-`j/k` or arrows navigate, `enter` selects, `q`/`esc` back. Inside an animation: `h/l` cycle, `r`
-random, `+`/`-` speed, `s` source, `e` export as a standalone Go program, `t` custom banner text.
 
 ## Project structure
 
@@ -379,8 +356,6 @@ asciifx/            the engine and CLI toolkit
   term/             capability detection, diff encoding, the player
   teafx/            Bubble Tea v2 component, spinner, lipgloss/uv bridge
 cmd/asciifx/        the CLI, plus cmd/asciifx/testdata/ golden frames
-cmd/showcase/       the demo TUI
-pkg/                the showcase's own components (spinners, effects, banners, splash)
 examples/           five demo programs, simple to hard, each with a headless test
 skill/              the agent skill: the render → inspect → tune → embed loop
 docs/research.md    ecosystem survey, terminal support matrix, and what was borrowed from where
@@ -390,7 +365,7 @@ docs/research.md    ecosystem survey, terminal support matrix, and what was borr
 
 | Library | Use |
 |---|---|
-| [Bubble Tea v2](https://charm.land) | TUI framework (the showcase and `teafx`) |
+| [Bubble Tea v2](https://charm.land) | TUI framework (`teafx` and the examples) |
 | [Lip Gloss v2](https://charm.land) | Styling, layout, Canvas and Compositor |
 | [ultraviolet](https://github.com/charmbracelet/ultraviolet) | The cell and screen types the bridge targets |
 | [briandowns/spinner](https://github.com/briandowns/spinner) | Spinner presets (referenced) |

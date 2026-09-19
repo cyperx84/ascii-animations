@@ -15,10 +15,16 @@
 //
 // Frames advance one tick per tick message at the run's FPS, so output is
 // exactly what `asciifx render` shows for the same options.
+//
+// A Model gets none of term.Play's terminal-safety guarantees — the frame
+// rate cap for slow transports, the static frame when motion is unwanted,
+// the colour profile and dither for View — until SetCaps is called with a
+// Caps. NewDetected and FromRunDetected are the short way to tell it.
 package teafx
 
 import (
 	"errors"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -77,6 +83,27 @@ func New(effect string, opts fx.Options) (Model, error) {
 	return FromRun(r)
 }
 
+// NewDetected is New plus SetCaps(term.Detect(os.Stdout)): the terminal
+// contract taken from the environment the process is already running in,
+// with no argument for the caller to supply.
+//
+// Two things follow from where it looks. It reads this process's stdout and
+// this process's environment, so a program that renders somewhere else — a
+// different file, an SSH session it opened itself — wants New and its own
+// SetCaps instead. And when that environment says not to animate, which is
+// what `go test`, a pipe, CI and TERM=dumb all say, the model is built
+// static: Init returns no command and Done is true from the first frame.
+// That is correct in a terminal and a trap in a test, so a test that wants
+// motion should use New with a Caps it chose.
+func NewDetected(effect string, opts fx.Options) (Model, error) {
+	m, err := New(effect, opts)
+	if err != nil {
+		return Model{}, err
+	}
+	m.SetCaps(term.Detect(os.Stdout))
+	return m, nil
+}
+
 // FromRun builds a model for a run the caller already has, which is the way
 // in for anything Lookup cannot name: a composition from fx.Compose, or a run
 // whose options were assembled elsewhere.
@@ -102,16 +129,29 @@ func FromRun(r *fx.Run) (Model, error) {
 	return Model{id: lastID.Add(1), run: r, buf: buf}, nil
 }
 
+// FromRunDetected is FromRun plus SetCaps(term.Detect(os.Stdout)), for the
+// same reason NewDetected exists: the run came from somewhere New cannot
+// reach, but the caller still wants the environment's terminal contract
+// applied rather than deciding for itself. FromRun stays available for that
+// case.
+func FromRunDetected(r *fx.Run) (Model, error) {
+	m, err := FromRun(r)
+	if err != nil {
+		return Model{}, err
+	}
+	m.SetCaps(term.Detect(os.Stdout))
+	return m, nil
+}
+
 // ID identifies this instance's tick messages.
 func (m Model) ID() int64 { return m.id }
 
 // Run exposes the underlying run, e.g. for Tick or Size.
 func (m Model) Run() *fx.Run { return m.run }
 
-// SetCaps gives the model the terminal contract term.Play honours, which a
-// Bubble Tea program otherwise gets none of: the frame rate cap for slow
-// transports, the static frame when motion is unwanted, and the colour
-// profile and dither for View.
+// SetCaps gives the model the terminal contract term.Play honours; see the
+// package doc for what that buys. NewDetected and FromRunDetected call this
+// with term.Detect for a caller who does not want to decide for itself.
 //
 //	m.SetCaps(term.Detect(os.Stdout))
 //
