@@ -4,8 +4,9 @@ What broke, chafed or was missing when this repo's own demo programs were writte
 its public API. Every entry names the file and line that caused it, so the next person can
 start at the code rather than at the story.
 
-Status: rounds 1-3 landed on `feat/fxdash-dogfood` — engine fixes, five demos,
-and an SVG exporter. Findings 2, 3, 4, 6, 7 and 8 are fixed; 1 and 5 are
+Status: rounds 1-4 landed on `feat/fxdash-dogfood` — engine fixes, five demos,
+an SVG exporter, and a spinner that honours the terminal. Findings 2, 3, 4,
+6, 7, 8 and 9 are fixed; 1 and 5 are
 documented, not fixed. "What to do next" at the end is the ranked list.
 
 ## Method
@@ -136,6 +137,29 @@ inside an `<img>`. Two details earn their code:
 - `--quantize` rounds colours before the runs are cut, which merges
   neighbouring cells a viewer cannot tell apart. A gradient is where the bytes
   go.
+
+### 9. The spinner kept spinning under reduced motion
+
+Found by running `ASCIIFX_REDUCED_MOTION=1 go run ./examples/02-intro` in a
+real terminal rather than in a test: the intro froze on its last frame exactly
+as intended, and the spinner underneath it kept turning. Two reads a second
+apart, from the same pane:
+
+	⠋ Warming up the pixels
+	⠸ Warming up the pixels
+
+`teafx.Model` honoured the contract; `asciifx/spinner` had no idea it existed.
+A spinner is the one widget that animates for as long as the program runs, so
+it is the worst one to miss.
+
+Fixed: `spinner.WithCaps(term.Caps)`, opt-in like the package's other three
+extras, so upstream's call shape still behaves exactly as upstream's does. A
+Caps with `Animate` false stops the chain rather than hiding it, so a program
+under CI does no per-frame work at all.
+
+The lesson is about method, not about spinners: this is the bug the five
+headless tests could not have caught, because nothing in a test has an opinion
+about the terminal. Run the thing.
 
 ## What the demos cover
 

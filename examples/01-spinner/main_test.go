@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/cyperx84/ascii-animations/asciifx/term"
 )
 
 // The point of this example is that the upstream call shape still works, so
@@ -10,7 +12,7 @@ import (
 // one colours every rune separately, which is why the check is against the
 // stripped view rather than the styled one.
 func TestRenderShowsThreeSpinners(t *testing.T) {
-	out := stripANSI(newModel().render())
+	out := stripANSI(newModel(term.Caps{Profile: term.TrueColor, Animate: true}).render())
 	for _, want := range []string{"working", "resolving hosts", "uploading layers"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view is missing %q:\n%s", want, out)

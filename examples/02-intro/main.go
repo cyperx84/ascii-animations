@@ -66,6 +66,10 @@ func newModel(caps term.Caps) (model, error) {
 		spinner.WithSpinner(spinner.Dots),
 		spinner.WithLabel("Warming up the pixels"),
 		spinner.WithPalette("synthwave"),
+		// The spinner needs the same verdict the intro got. It is the one
+		// widget that animates for as long as the program runs, so it is the
+		// one that matters most under reduced motion.
+		spinner.WithCaps(caps),
 	)
 	return model{intro: intro, spinner: spin}, nil
 }

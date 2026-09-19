@@ -20,6 +20,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/cyperx84/ascii-animations/asciifx/spinner"
+	"github.com/cyperx84/ascii-animations/asciifx/term"
 )
 
 var (
@@ -36,11 +37,16 @@ type model struct {
 	shimmering spinner.Model
 }
 
-func newModel() model {
+func newModel(caps term.Caps) model {
 	return model{
-		upstream:   spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(plainStyle)),
-		labelled:   spinner.New(spinner.WithSpinner(spinner.Dots2), spinner.WithLabel("resolving hosts"), spinner.WithPalette("nord")),
-		shimmering: spinner.New(spinner.WithSpinner(spinner.Dots), spinner.WithLabel("uploading layers"), spinner.WithPalette("synthwave"), spinner.WithShimmer(1.4)),
+		// Upstream's own call, unchanged: no Caps, no extras.
+		upstream: spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(plainStyle)),
+		labelled: spinner.New(spinner.WithSpinner(spinner.Dots2), spinner.WithLabel("resolving hosts"),
+			spinner.WithPalette("nord")),
+		// WithCaps is the fourth extra: this one stops under CI, a pipe,
+		// TERM=dumb or ASCIIFX_REDUCED_MOTION, and slows on a slow transport.
+		shimmering: spinner.New(spinner.WithSpinner(spinner.Dots), spinner.WithLabel("uploading layers"),
+			spinner.WithPalette("synthwave"), spinner.WithShimmer(1.4), spinner.WithCaps(caps)),
 	}
 }
 
@@ -88,7 +94,7 @@ func (m model) render() string {
 }
 
 func main() {
-	if _, err := tea.NewProgram(newModel()).Run(); err != nil {
+	if _, err := tea.NewProgram(newModel(term.Detect(os.Stdout))).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

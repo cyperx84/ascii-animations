@@ -91,6 +91,7 @@ func newModel(caps term.Caps) (model, error) {
 		spinner.WithSpinner(spinner.Dots2),
 		spinner.WithLabel("polling control plane"),
 		spinner.WithPalette("nord"),
+		spinner.WithCaps(caps),
 	)
 	if err := m.setAmbient(0); err != nil {
 		return model{}, err

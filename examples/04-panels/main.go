@@ -79,7 +79,8 @@ func newModel(caps term.Caps) (model, error) {
 			{label: "aurora", model: left, x: 0, y: 2},
 			{label: "pipes", model: right, x: panelW + gap, y: 2},
 		},
-		spinner: spinner.New(spinner.WithSpinner(spinner.Dots2), spinner.WithLabel("compositing"), spinner.WithPalette("nord")),
+		spinner: spinner.New(spinner.WithSpinner(spinner.Dots2), spinner.WithLabel("compositing"),
+			spinner.WithPalette("nord"), spinner.WithCaps(caps)),
 	}, nil
 }
 

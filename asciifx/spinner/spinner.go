@@ -35,6 +35,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/cyperx84/ascii-animations/asciifx/spinner/styles"
+	"github.com/cyperx84/ascii-animations/asciifx/term"
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
 )
 
@@ -184,6 +185,10 @@ type Model struct {
 	hasLabel bool
 	palette  tint.Gradient
 	shimmer  float64
+	// caps is the terminal contract, set by WithCaps. still freezes the
+	// spinner; minTick is the floor the frame interval is held to.
+	still   bool
+	minTick time.Duration
 }
 
 // ID returns the spinner's unique ID.
@@ -227,6 +232,12 @@ type TickMsg struct {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case TickMsg:
+		if m.still {
+			// The terminal asked for no motion. Dropping the tick ends the
+			// chain, so a spinner under reduced motion costs nothing per
+			// frame rather than spinning invisibly.
+			return m, nil
+		}
 		// If an ID is set, and the ID doesn't belong to this spinner, reject
 		// the message.
 		if msg.ID > 0 && msg.ID != m.id {
@@ -334,10 +345,18 @@ func (m Model) Tick() tea.Msg {
 
 // tick schedules the next tick of this chain.
 func (m Model) tick(id, tag int) tea.Cmd {
+	if m.still {
+		return nil
+	}
 	fps := m.Spinner.FPS
 	if fps <= 0 {
 		// A zero or negative interval would make tea.Tick fire in a hot loop.
 		fps = time.Second / 10
+	}
+	if m.minTick > fps {
+		// A slow transport asked for fewer frames a second. The interval is
+		// the reciprocal, so the cap is a floor here.
+		fps = m.minTick
 	}
 	return tea.Tick(fps, func(t time.Time) tea.Msg {
 		return TickMsg{Time: t, ID: id, tag: tag}
@@ -374,6 +393,27 @@ func WithPalette(name string) Option {
 			panic("asciifx: spinner palette: " + err.Error())
 		}
 		m.palette = g
+	}
+}
+
+// WithCaps gives the spinner the terminal's own verdict, the same one
+// term.Play and teafx.Model honour:
+//
+//	spinner.New(spinner.WithCaps(term.Detect(os.Stdout)))
+//
+// A Caps whose Animate is false stops the spinner on its first frame and ends
+// the tick chain, so a program under CI, a pipe, TERM=dumb or
+// ASCIIFX_REDUCED_MOTION shows a still glyph and does no per-frame work. A
+// Caps with an FPS cap slows the spin to at most that rate.
+//
+// Like every extra here it is opt-in: a spinner built from upstream's options
+// alone behaves exactly as upstream's does.
+func WithCaps(c term.Caps) Option {
+	return func(m *Model) {
+		m.still = !c.Animate
+		if c.FPS > 0 {
+			m.minTick = time.Second / time.Duration(c.FPS)
+		}
 	}
 }
 
