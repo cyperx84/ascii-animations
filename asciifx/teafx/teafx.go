@@ -84,12 +84,17 @@ func New(effect string, opts fx.Options) (Model, error) {
 }
 
 // NewDetected is New plus SetCaps(term.Detect(os.Stdout)): the terminal
-// contract applied from the environment the process is already running in,
-// with no argument for the caller to supply. Detect reads environment
-// variables only and never touches the terminal, so this is as cheap as New
-// itself. Use New instead when the caller wants to decide the contract for
-// itself — a TUI framework that already probed the terminal, or a test that
-// wants a specific Caps.
+// contract taken from the environment the process is already running in,
+// with no argument for the caller to supply.
+//
+// Two things follow from where it looks. It reads this process's stdout and
+// this process's environment, so a program that renders somewhere else — a
+// different file, an SSH session it opened itself — wants New and its own
+// SetCaps instead. And when that environment says not to animate, which is
+// what `go test`, a pipe, CI and TERM=dumb all say, the model is built
+// static: Init returns no command and Done is true from the first frame.
+// That is correct in a terminal and a trap in a test, so a test that wants
+// motion should use New with a Caps it chose.
 func NewDetected(effect string, opts fx.Options) (Model, error) {
 	m, err := New(effect, opts)
 	if err != nil {
