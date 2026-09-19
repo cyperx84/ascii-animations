@@ -1,12 +1,14 @@
 package teafx
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
 	_ "github.com/cyperx84/ascii-animations/asciifx/effects"
 	"github.com/cyperx84/ascii-animations/asciifx/fx"
+	"github.com/cyperx84/ascii-animations/asciifx/term"
 	"github.com/cyperx84/ascii-animations/asciifx/tint"
 )
 
@@ -234,5 +236,123 @@ func TestFitResizes(t *testing.T) {
 	}
 	if m.buf.W != 30 {
 		t.Fatal("view buffer not updated after resize")
+	}
+}
+
+func TestFromRunPlaysAComposition(t *testing.T) {
+	// A chain is the case New cannot serve: Compose returns a Spec that
+	// Lookup will never find, because it was never registered.
+	spec, err := fx.Compose(
+		fx.Step{Name: "reveal", Params: map[string]string{"pattern": "center"}},
+		fx.Step{Name: "fire", For: 0.4, Filter: fx.SelNot(fx.SelInk)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.Lookup(spec.Name); err == nil {
+		t.Fatalf("Lookup found %q, so this test is not covering what it claims", spec.Name)
+	}
+	opts := fx.Options{W: 16, H: 5, Seed: 3, Content: fx.Text("HI", tint.None)}
+	run, err := fx.NewRun(spec, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := FromRun(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Init() == nil {
+		t.Fatal("Init should start ticking")
+	}
+	frames := m.Run().Frames()
+	for i := 1; i < frames; i++ {
+		m, _ = m.Update(TickMsg{ID: m.ID()})
+	}
+	if !m.Done() {
+		t.Fatalf("not done after %d frames", frames)
+	}
+	// The same frame the run produces on its own, which is the point of
+	// driving it through the model instead of by hand.
+	ref, err := fx.NewRun(spec, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := ref.Seek(frames - 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.buf.Plain(); got != want.Plain() {
+		t.Fatalf("model frame differs from the run's own\n got:\n%s\nwant:\n%s", got, want.Plain())
+	}
+}
+
+func TestFromRunRejectsNil(t *testing.T) {
+	if _, err := FromRun(nil); err == nil {
+		t.Fatal("FromRun(nil) should error rather than hand back a model that panics later")
+	}
+}
+
+func TestCapsStopMotionAndPickTheStaticFrame(t *testing.T) {
+	opts := fx.Options{W: 12, H: 3, Seed: 1, Content: fx.Text("HELLO", tint.None)}
+	m, err := New("reveal", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Animate false is what CI, a pipe, TERM=dumb and ASCIIFX_REDUCED_MOTION
+	// all resolve to.
+	m.SetCaps(term.Caps{Profile: term.TrueColor, Reason: "test"})
+	if cmd := m.Init(); cmd != nil {
+		t.Fatal("a model told not to animate should start no tick chain")
+	}
+	frame := m.View()
+	m, cmd := m.Update(TickMsg{ID: m.ID()})
+	if cmd != nil || m.View() != frame {
+		t.Fatal("a stray tick should not advance a static model")
+	}
+	if cmd := m.Restart(); cmd != nil {
+		t.Fatal("Restart on a static model should not start a chain")
+	}
+	// The frame is the one term.Play shows for the same run.
+	want, err := m.Run().Seek(term.StaticTick(m.Run()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.buf.Plain(); got != want.Plain() {
+		t.Fatalf("static frame is not term.StaticTick's\n got:\n%s\nwant:\n%s", got, want.Plain())
+	}
+}
+
+func TestCapsCapTheFrameRateWithoutRaisingIt(t *testing.T) {
+	m, err := New("fire", fx.Options{W: 12, H: 6, Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := m.Run().FPS()
+	if native <= 15 {
+		t.Skipf("fire runs at %d fps, so a 15 fps cap proves nothing", native)
+	}
+	m.SetCaps(term.Caps{Profile: term.TrueColor, Animate: true, FPS: 15})
+	if got := m.fps(); got != 15 {
+		t.Fatalf("tick rate %d, want the cap 15", got)
+	}
+	m.SetCaps(term.Caps{Profile: term.TrueColor, Animate: true, FPS: native + 30})
+	if got := m.fps(); got != native {
+		t.Fatalf("tick rate %d, want the run's own %d: a high cap is not a speed-up", got, native)
+	}
+}
+
+func TestCapsChooseTheColourProfileOfTheView(t *testing.T) {
+	m, err := New("fire", fx.Options{W: 8, H: 4, Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	truecolor := m.View()
+	m.SetCaps(term.Caps{Profile: term.NoColor, Animate: true})
+	plain := m.View()
+	if plain == truecolor {
+		t.Fatal("View ignored the profile in Caps")
+	}
+	if strings.Contains(plain, "\x1b[38;2;") {
+		t.Fatalf("NoColor view still carries truecolor sequences: %q", plain)
 	}
 }

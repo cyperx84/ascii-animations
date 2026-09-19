@@ -18,6 +18,7 @@
 package teafx
 
 import (
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -54,6 +55,12 @@ type Model struct {
 	tag int
 	run *fx.Run
 	buf *cell.Buffer
+	// caps is the terminal contract this model honours, and capsSet says a
+	// caller handed one over. They are separate because the zero Caps is
+	// deliberately conservative — NoColor and not animated — so "no Caps
+	// given" cannot be spelled as an empty one.
+	caps    term.Caps
+	capsSet bool
 }
 
 // New builds a model for a registered effect. opts is validated exactly as
@@ -66,6 +73,27 @@ func New(effect string, opts fx.Options) (Model, error) {
 	r, err := fx.NewRun(spec, opts)
 	if err != nil {
 		return Model{}, err
+	}
+	return FromRun(r)
+}
+
+// FromRun builds a model for a run the caller already has, which is the way
+// in for anything Lookup cannot name: a composition from fx.Compose, or a run
+// whose options were assembled elsewhere.
+//
+//	spec, err := fx.Compose(
+//		fx.Step{Name: "reveal", Params: map[string]string{"pattern": "center"}},
+//		fx.Step{Name: "fire", For: 1.2, Filter: fx.SelNot(fx.SelInk)},
+//	)
+//	run, err := fx.NewRun(spec, fx.Options{W: 44, H: 9, Content: fx.Text(art, tint.None)})
+//	m, err := teafx.FromRun(run)
+//
+// The run is driven only through the model after this: the model owns the
+// tick chain, so stepping the same run by hand as well would show two
+// different frames to one component.
+func FromRun(r *fx.Run) (Model, error) {
+	if r == nil {
+		return Model{}, errors.New("teafx: nil run")
 	}
 	buf, err := r.Seek(0)
 	if err != nil {
@@ -80,19 +108,61 @@ func (m Model) ID() int64 { return m.id }
 // Run exposes the underlying run, e.g. for Tick or Size.
 func (m Model) Run() *fx.Run { return m.run }
 
+// SetCaps gives the model the terminal contract term.Play honours, which a
+// Bubble Tea program otherwise gets none of: the frame rate cap for slow
+// transports, the static frame when motion is unwanted, and the colour
+// profile and dither for View.
+//
+//	m.SetCaps(term.Detect(os.Stdout))
+//
+// Call it before Init. A Caps whose Animate is false makes the model show one
+// frame — the same frame term.Play shows, term.StaticTick's — and Init then
+// starts no tick chain, so a program under CI, a pipe, TERM=dumb or
+// ASCIIFX_REDUCED_MOTION does no per-frame work at all.
+//
+// Nothing is honoured unless this is called, because the zero Caps means "no
+// colour, do not animate": defaulting to it would freeze every model that
+// never asked about the terminal.
+func (m *Model) SetCaps(c term.Caps) {
+	if m.run == nil {
+		return
+	}
+	m.caps, m.capsSet = c, true
+	// A new contract invalidates the ticks already in flight, so a model told
+	// to stop animating stops even if it was mid-chain.
+	m.tag++
+	if !c.Animate {
+		m.buf, _ = m.run.Seek(term.StaticTick(m.run))
+	}
+}
+
 // Init starts ticking.
 func (m Model) Init() tea.Cmd { return m.tick() }
 
+// fps is the rate to tick at: the run's own, lowered to the cap when the
+// terminal asked for a lower one. A cap above the run's rate is not an
+// instruction to speed up.
+func (m Model) fps() int {
+	f := m.run.FPS()
+	if m.capsSet && m.caps.FPS > 0 && m.caps.FPS < f {
+		return m.caps.FPS
+	}
+	return f
+}
+
 // tick schedules the next tick of the chain the model is currently on.
 func (m Model) tick() tea.Cmd {
-	if m.run == nil {
+	if m.run == nil || m.static() {
 		return nil
 	}
 	id, tag := m.id, m.tag
-	return tea.Tick(time.Second/time.Duration(m.run.FPS()), func(time.Time) tea.Msg {
+	return tea.Tick(time.Second/time.Duration(m.fps()), func(time.Time) tea.Msg {
 		return TickMsg{ID: id, tag: tag}
 	})
 }
+
+// static reports whether this model shows one frame instead of animating.
+func (m Model) static() bool { return m.capsSet && !m.caps.Animate }
 
 // Update advances on this model's own TickMsg and, when Fit is set, resizes
 // on tea.WindowSizeMsg. Everything else is ignored.
@@ -102,6 +172,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case TickMsg:
+		if m.static() {
+			return m, nil
+		}
 		if msg.ID != 0 && msg.ID != m.id {
 			return m, nil
 		}
@@ -133,10 +206,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 // View renders the current frame in truecolor. Bubble Tea v2's renderer
 // downsamples to the terminal's colour profile, so no detection is needed
-// here.
+// here. After SetCaps the frame is encoded at that Caps' profile and dither
+// instead, which is what a caller who overrode the profile — or who wants
+// dithering rather than nearest-entry quantisation — is asking for.
 func (m Model) View() string {
 	if m.buf == nil {
 		return ""
+	}
+	if m.capsSet {
+		return term.ANSICaps(m.buf, m.caps)
 	}
 	return term.ANSI(m.buf, term.TrueColor)
 }
@@ -175,6 +253,11 @@ func (m *Model) Restart() tea.Cmd {
 		return nil
 	}
 	m.tag++
+	if m.static() {
+		// Rewinding a static model would replace its one frame with frame
+		// zero, which for a transition is a blank buffer.
+		return nil
+	}
 	m.buf, _ = m.run.Seek(0)
 	return m.tick()
 }
