@@ -4,9 +4,9 @@ What broke, chafed or was missing when this repo's own demo programs were writte
 its public API. Every entry names the file and line that caused it, so the next person can
 start at the code rather than at the story.
 
-Status: round 1 (engine fixes) and round 2 (five demos) landed on
-`feat/fxdash-dogfood`. Findings 2, 3, 4, 6 and 7 are fixed; 1 and 5 are
-documented, not fixed.
+Status: rounds 1-3 landed on `feat/fxdash-dogfood` — engine fixes, five demos,
+and an SVG exporter. Findings 2, 3, 4, 6, 7 and 8 are fixed; 1 and 5 are
+documented, not fixed. "What to do next" at the end is the ranked list.
 
 ## Method
 
@@ -120,6 +120,23 @@ comment that mentions a Bubble Tea program predates that. Only
 `examples/05-dashboard` needs the alternate screen, and it now shows the
 current shape.
 
+### 8. There was no way to show an animation to anyone not at a terminal
+
+A cast needs a player, a GIF needs a rasteriser and a font, and `vhs` — the
+obvious tool — is broken on this machine: 0.12.0 with ffmpeg 9.0.1 prints
+"Creating out.gif...", exits 0 and writes nothing, in a sandbox and in a real
+TTY alike. So the README of an animation library showed no animation.
+
+Fixed by `asciifx svg` and `asciifx/svg`: every frame in one document, one CSS
+keyframe per frame, no script, no font, no external reference, so it plays
+inside an `<img>`. Two details earn their code:
+
+- Block glyphs are drawn as rectangles, not text. A terminal scales `█` and
+  `▀` to fill the cell; a font does not, so text leaves a seam on every row.
+- `--quantize` rounds colours before the runs are cut, which merges
+  neighbouring cells a viewer cannot tell apart. A gradient is where the bytes
+  go.
+
 ## What the demos cover
 
 | Demo | Surface it exercises |
@@ -133,3 +150,33 @@ current shape.
 Every demo has a headless test, and three of them lint their own frames with
 `asciifx/lint` — which is the loop the README sells, closed on the project
 itself.
+
+## What to do next
+
+Ranked by what a consumer hits first, not by what is interesting to build.
+
+1. **Make `SetCaps` hard to forget.** It is the whole terminal-safety contract
+   and it is opt-in, which means every program that does not know about it is
+   the program that needed it. Options, roughly in order of how much they
+   change: document it at the top of `teafx`; add `teafx.NewDetected` that
+   folds `term.Detect(os.Stdout)` in; or make `Model` consult a package-level
+   default set once at startup. Do not make `New` read the environment
+   silently — the CLI's own habit of detecting explicitly is the right one.
+2. **`fx.Compose` deserves a param-scoped chain builder.** `Step` is fine in
+   Go, but the CLI's `--then`/`--for`/`--filter` scoping has no Go equivalent,
+   so the two ways of saying the same thing look nothing alike. A
+   `fx.Chain().Then("fire").For(1.2).Filter(sel)` builder would close that.
+3. **Resize deserves a transition-aware answer.** `examples/05-dashboard`
+   drops a transition mid-flight on resize, because the run is sized to the
+   panel it started in. `Run.Resize` resumes pure transitions exactly, so a
+   `Model.SetSize` that kept a transition alive is possible — it just needs
+   the content re-snapshotted at the new size, which only the caller can do.
+   An explicit `Model.Reseed(Content)` would make it expressible.
+4. **The SVG exporter could carry the terminal's own colours.** It quantises
+   but never dithers, so a 16- or 256-colour profile exports as flat bands
+   where the terminal would stipple. `term.ANSIWith` already knows how; the
+   encoder would need the same `tint.Dither` path.
+5. **`showcase` and `pkg/` still share no code with the engine** (finding 1).
+   Either port the showcase onto `asciifx` — it is the best remaining
+   dogfood, and it would delete most of `pkg/` — or retire it now that
+   `examples/` covers the same ground with less code.
