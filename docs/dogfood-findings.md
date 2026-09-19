@@ -26,8 +26,10 @@ exercised the embedding surface the README sells to TUI builders. The two `examp
 programs are ~60 lines each and cover `Model.View` and a hand-driven `fx.Run`; they touch
 neither `teafx.At`, `teafx.Content`, `fx.Compose`, `fx.Filter`, `Restart` nor `Caps`.
 
-Not fixed by this work: `showcase` and `pkg/` are left alone. Logged because it explains
-why the gaps below survived to now.
+Resolved by deletion, 2026-09-19. Keeping the showcase would have meant porting 3,290 lines
+onto the engine to reach where `examples/` already stands in a fraction of that, for a demo
+nobody outside this machine ran. `cmd/showcase/` and `pkg/` are gone; the history has them if
+anything is ever wanted back.
 
 ### 2. `teafx.Model` ignores the terminal-safety contract
 
@@ -198,13 +200,12 @@ itself.
 
 Ranked by what a consumer hits first, not by what is interesting to build.
 
-1. **Make `SetCaps` hard to forget.** It is the whole terminal-safety contract
-   and it is opt-in, which means every program that does not know about it is
-   the program that needed it. Options, roughly in order of how much they
-   change: document it at the top of `teafx`; add `teafx.NewDetected` that
-   folds `term.Detect(os.Stdout)` in; or make `Model` consult a package-level
-   default set once at startup. Do not make `New` read the environment
-   silently — the CLI's own habit of detecting explicitly is the right one.
+1. ~~**Make `SetCaps` hard to forget.**~~ Done: `teafx.NewDetected` and
+   `teafx.FromRunDetected` fold `term.Detect(os.Stdout)` in, and the package
+   doc now leads with what a Model does not get until it is told. `New` still
+   reads no environment on its own, because the CLI's habit of detecting
+   explicitly is the right one and a library that guesses is worse than one
+   that asks.
 2. **`fx.Compose` deserves a param-scoped chain builder.** `Step` is fine in
    Go, but the CLI's `--then`/`--for`/`--filter` scoping has no Go equivalent,
    so the two ways of saying the same thing look nothing alike. A
@@ -219,7 +220,13 @@ Ranked by what a consumer hits first, not by what is interesting to build.
    but never dithers, so a 16- or 256-colour profile exports as flat bands
    where the terminal would stipple. `term.ANSIWith` already knows how; the
    encoder would need the same `tint.Dither` path.
-5. **`showcase` and `pkg/` still share no code with the engine** (finding 1).
-   Either port the showcase onto `asciifx` — it is the best remaining
-   dogfood, and it would delete most of `pkg/` — or retire it now that
-   `examples/` covers the same ground with less code.
+5. ~~**`showcase` and `pkg/` still share no code with the engine**~~ Retired
+   rather than ported, 2026-09-19. See finding 1.
+
+6. **Distribution, not ergonomics, is what the project is short of.** This was
+   missed for a long time while the code got better: there were no tags at
+   all, so nothing was installable by version and pkg.go.dev had nothing to
+   render, and the repository description still called the project a showcase
+   of the TUI that has now been deleted. Fixed alongside the retirement. The
+   lesson generalises — a library nobody can find does not have an API
+   problem.
