@@ -4,7 +4,9 @@ What broke, chafed or was missing when this repo's own demo programs were writte
 its public API. Every entry names the file and line that caused it, so the next person can
 start at the code rather than at the story.
 
-Status: round 1 (engine fixes) in progress on `feat/fxdash-dogfood`.
+Status: round 1 (engine fixes) and round 2 (five demos) landed on
+`feat/fxdash-dogfood`. Findings 2, 3, 4, 6 and 7 are fixed; 1 and 5 are
+documented, not fixed.
 
 ## Method
 
@@ -68,6 +70,66 @@ Fix: move the rules to `asciifx/lint`; `cmd/asciifx/check.go` keeps the flags, t
 formatting and the exit code. `cmd/asciifx/testdata/check-bad-art.golden` pins the CLI
 output byte for byte, so it is the regression guard for the move.
 
-## Round 2 findings
+### 5. A lipgloss Layer composed onto a Canvas ignores its own position
 
-Filled in as the demos are written.
+This is the one that cost the most time, because nothing fails: the layout
+just comes out wrong.
+
+`lipgloss.Layer.Draw` (`layer.go:153` in lipgloss v2.0.6) is
+
+	func (l *Layer) Draw(scr uv.Screen, area uv.Rectangle) {
+		uv.NewStyledString(l.content).Draw(scr, area)
+	}
+
+It never reads its own X and Y — those are `Compositor`'s business.
+`Canvas.Compose` hands every drawable the whole canvas, so a pile of
+positioned Layers composed onto a Canvas all paint at the origin, each one
+clearing the canvas as it goes, and only the last survives. In
+`examples/05-dashboard` that looked like "the ambient panel never renders";
+the real cause was the node table, composed last, wiping everything.
+
+The README warned about mixing the two paths but gave the wrong reason. The
+reason is not that a Layer is opaque — it is that a Layer has no position
+until something gives it one. `teafx.At` is that something, and it pins any
+drawable, not only an effect:
+
+	l := lipgloss.NewLayer(s)
+	canvas.Compose(teafx.At(l, uv.Rect(x, y, l.Width(), l.Height())))
+
+Both demos that use a Canvas now pin everything, and
+`examples/04-panels` has a test that the two paths paint identical glyphs, so
+a regression in either one shows up as a diff.
+
+Not fixed in code — it is upstream behaviour and the pin is the right answer.
+Fixed in the README and demonstrated in two demos.
+
+### 6. A Caps could not be rendered with from outside `term`
+
+`Caps.dither()` was unexported, and it holds a real rule: Detect's answer is
+re-resolved against the current profile, because a caller may have replaced
+the profile that answer was made for. A consumer holding a `Caps` therefore
+could not encode a buffer the way that Caps says to — `Caps.Dither` alone is
+the wrong answer often enough to matter.
+
+Fixed: `term.ANSICaps(b, caps)`, used by `teafx.Model.View` itself.
+
+### 7. Alt screen moved in Bubble Tea v2 and nothing here said so
+
+`tea.WithAltScreen()` is gone; it is `View.AltScreen` now. Every asciifx doc
+comment that mentions a Bubble Tea program predates that. Only
+`examples/05-dashboard` needs the alternate screen, and it now shows the
+current shape.
+
+## What the demos cover
+
+| Demo | Surface it exercises |
+|---|---|
+| `examples/01-spinner` | the drop-in spinner, `WithLabel`, `WithPalette`, `WithShimmer` |
+| `examples/02-intro` | `teafx.Model`, `Done`, `Restart`, `SetCaps` |
+| `examples/03-chain` | `fx.Compose`, `Step.Filter`, `fx.SelNot`/`fx.SelInk`, `teafx.FromRun`, `Loop` |
+| `examples/04-panels` | both composition paths, `teafx.At`, `Canvas.Compose`, and a test that they agree |
+| `examples/05-dashboard` | `teafx.Content`, `Snapshot`, several models at once, `SetSize`, `fx.Hash01` |
+
+Every demo has a headless test, and three of them lint their own frames with
+`asciifx/lint` — which is the loop the README sells, closed on the project
+itself.
